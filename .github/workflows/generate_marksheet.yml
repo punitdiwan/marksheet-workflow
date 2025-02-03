@@ -81,3 +81,4 @@ jobs:
         run: |
           cd output
           spaces-cli up -s schoolerp-bucket -r blr1 -i DO00Z6BQLU76298YFU2G -k l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo -t templates/marksheets/${{ github.event.inputs.SCHOOL_ID }}/result/"${{ github.event.inputs.BATCH_ID }}_${{ github.event.inputs.JOB_ID }}.pdf"  merged.pdf
+          spaces-cli acl -s schoolerp-bucket -r blr1 -i DO00Z6BQLU76298YFU2G -k l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo -t templates/marksheets/${{ github.event.inputs.SCHOOL_ID }}/result/"${{ github.event.inputs.BATCH_ID }}_${{ github.event.inputs.JOB_ID }}.pdf" --acl public-read
