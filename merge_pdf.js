@@ -40,7 +40,7 @@ const uid = process.env.JOB_ID;
 (async () => {
 
     const now = Date.now();
-    const filename = `${batchId}_${now}.pdf`
+    const filename = `${batchId}_${uid}.pdf`
     console.log("now", now);
 
 
@@ -70,40 +70,42 @@ const uid = process.env.JOB_ID;
     const key = `templates/marksheets/${school}/result/${filename}`;
 
     // Now upload the merged PDF to DigitalOcean or your server
-    const fileToUpload = fs.createReadStream(mergedPdfPath);  // Create a readable stream for the file
-    const formData = new FormData();
-    formData.append("photo", fileToUpload);
-    formData.append("key", key);  // Using the saved file name as the key
-    formData.append("ContentType", 'application/pdf');  // Set the appropriate content type
+    // const fileToUpload = fs.createReadStream(mergedPdfPath);  // Create a readable stream for the file
+    // const formData = new FormData();
+    // formData.append("photo", fileToUpload);
+    // formData.append("key", key);  // Using the saved file name as the key
+    // formData.append("ContentType", 'application/pdf');  // Set the appropriate content type
 
-    // Make the POST request to upload the file using axios
-    const res = await axios.post(`${API_URL}/api/uploadfileToDigitalOcean`, formData, {
+    const jobHistoryData = {
+        _school: school,
+        table: "job_history",
+        _uid: uid,
+        payload: {
+            status: true,
+            file_path: key  // Assuming file_path is returned from the first API call
+        }
+    };
+    const updateResponse = await axios.post(`${API_URL}/api/updatejobHistory`, jobHistoryData, {
         headers: {
-            'Content-Type': 'multipart/form-data',  // Make sure to set the correct content type
+            'Content-Type': 'application/json',  // Make sure the content type is application/json for API update
         }
     });
+    console.log('Job history updated:', updateResponse.data);
 
-    // Handle the response
-    if (res.status === 200) {
-        console.log('File uploaded successfully!');
-        const jobHistoryData = {
-            _school: school,
-            table: "job_history",
-            _uid: uid,
-            payload: {
-                status: true,
-                file_path: key  // Assuming file_path is returned from the first API call
-            }
-        };
-        const updateResponse = await axios.post(`${API_URL}/api/updatejobHistory`, jobHistoryData, {
-            headers: {
-                'Content-Type': 'application/json',  // Make sure the content type is application/json for API update
-            }
-        });
-        console.log('Job history updated:', updateResponse.data);
 
-    } else {
-        console.error('Failed to upload file:', res.statusText);
-    }
+    // // Make the POST request to upload the file using axios
+    // const res = await axios.post(`${API_URL}/api/uploadfileToDigitalOcean`, formData, {
+    //     headers: {
+    //         'Content-Type': 'multipart/form-data',  // Make sure to set the correct content type
+    //     }
+    // });
+
+    // // Handle the response
+    // if (res.status === 200) {
+    //     console.log('File uploaded successfully!');
+
+    // } else {
+    //     console.error('Failed to upload file:', res.statusText);
+    // }
 })();
 
