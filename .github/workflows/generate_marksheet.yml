@@ -20,6 +20,9 @@ on:
       API_URL:
         description: API URL
         required: true
+      JOB_URL:
+        description: JOB_URL
+        required: true
       TEMPLATE_URL:
         description: TEMPLATE URL
         required: true
@@ -48,6 +51,7 @@ jobs:
           API_URL="${{ github.event.inputs.API_URL }}"
           TEMPLATE_URL="${{ github.event.inputs.TEMPLATE_URL }}"
           JOB_ID="${{ github.event.inputs.JOB_ID }}"
+          JOB_URL="${{ github.event.inputs.JOB_URL }}"
 
           echo "SCHOOL_ID=$SCHOOL_ID" >> $GITHUB_ENV
           echo "BATCH_ID=$BATCH_ID" >> $GITHUB_ENV
@@ -57,6 +61,7 @@ jobs:
           echo "API_URL=$API_URL" >> $GITHUB_ENV
           echo "TEMPLATE_URL=$TEMPLATE_URL" >> $GITHUB_ENV
           echo "JOB_ID=$JOB_ID" >> $GITHUB_ENV
+          echo "JOB_URL=$JOB_URL" >> $GITHUB_ENV
       - name: Install dependencies
         run: |
           npm install

@@ -32,7 +32,7 @@ const path = require('path');
 const axios = require('axios');
 const FormData = require('form-data');
 require('dotenv').config({ path: '../.env' });
-const API_URL = process.env.API_URL;
+const JOB_URL = process.env.JOB_URL;
 const school = process.env.SCHOOL_ID;
 const batchId = process.env.BATCH_ID;
 const uid = process.env.JOB_ID;
@@ -85,7 +85,7 @@ const uid = process.env.JOB_ID;
             file_path: key  // Assuming file_path is returned from the first API call
         }
     };
-    const updateResponse = await axios.post(`${API_URL}/api/updatejobHistory`, jobHistoryData, {
+    const updateResponse = await axios.post(JOB_URL, jobHistoryData, {
         headers: {
             'Content-Type': 'application/json',  // Make sure the content type is application/json for API update
         }
