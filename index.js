@@ -63,7 +63,7 @@ async function getMarks() {
     const DIVISION_ID = process.env.DIVISION_ID;
     const API_URL = process.env.API_URL;
     const group = groupid?.split(",")
-    const url = `${API_URL}/api/cce_examv1/getMarks`;
+    const url = API_URL;
 
     const data = {
         "_school": _school,
