@@ -3,13 +3,21 @@ const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
 
-
-
+// Directory where .docx files are located
 const docxDirectory = path.resolve(__dirname);
 const files = fs.readdirSync(docxDirectory);
 
 // Filter out the .docx files
 const docxFiles = files.filter(file => file.endsWith('.docx'));
+
+// Sort files based on the numerical prefix (before the first underscore '_')
+const sortedFiles = docxFiles.sort((a, b) => {
+    // Extract the numerical prefix before the first underscore '_'
+    const prefixA = parseInt(a.split('_')[0], 10); // e.g., '23' from '23_YASH VISHWAKARMA.docx'
+    const prefixB = parseInt(b.split('_')[0], 10); // e.g., '24' from '24_JOHN DOE.docx'
+
+    return prefixA - prefixB; // Sort numerically in ascending order
+});
 
 // Function to upload files in batches
 async function uploadFilesInBatches(files, batchSize) {
@@ -52,4 +60,4 @@ async function uploadFilesInBatches(files, batchSize) {
 }
 
 // Call the function with a batch size of 5 (or whatever size you prefer)
-uploadFilesInBatches(docxFiles, 5);
+uploadFilesInBatches(sortedFiles, 5);

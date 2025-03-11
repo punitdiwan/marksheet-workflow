@@ -96,7 +96,8 @@ const generateDocuments = async () => {
         const data = await getMarks();
 
         data.forEach((record, index) => {
-            const outputPath = path.resolve(outputDir, `merged_${index + 1}.docx`);
+            const studentname = record?.full_name || 'NA';
+            const outputPath = path.resolve(outputDir, `${index + 1}_${studentname}.docx`);
             mergeDocxTemplate(localTemplatePath, outputPath, record);
             setCreatorInDocx(outputPath, outputPath, "John Joe"); // Set creator metadata for each document
         });
