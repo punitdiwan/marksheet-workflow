@@ -1,4 +1,4 @@
-name: Generate Marksheet
+name: Generate Zip Marksheet
 on:
   workflow_dispatch:
     inputs:
