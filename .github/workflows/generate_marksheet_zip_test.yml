@@ -86,10 +86,10 @@ jobs:
           else
             zip -r archive_name.zip *.docx
           fi
-      - name: Go to output folder and run merge_pdf.js
+      - name: Go to output folder and run marge_2pdf.js
         run: |
           cd output
-          node merge_pdf.js
+          node marge_2pdf.js
 
       - name: Upload a file
         run: |
