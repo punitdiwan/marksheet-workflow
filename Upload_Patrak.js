@@ -13,7 +13,7 @@ const uid = process.env.JOB_ID;
     console.log("now", now);
 
 
-    const key = `templates/marksheets/${school}/result/${filename}`;
+    const key = `templates/marksheets/${school}/patrak/${filename}`;
 
     const jobHistoryData = {
         _school: school,
