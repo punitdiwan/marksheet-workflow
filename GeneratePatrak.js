@@ -27,11 +27,6 @@ const outputFolder = path.join(__dirname, 'output');
 
 // Function to fill the template with an array of objects
 async function fillTemplate(valuesArray) {
-    if (!valuesArray || valuesArray.length === 0) {
-        console.error('No values provided to fill the template');
-        return;
-    }
-
     // Load the Excel file template
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(localTemplatePath);
@@ -51,50 +46,24 @@ async function fillTemplate(valuesArray) {
 
         // Iterate through the headers and match with the keys from the values object
         headers.forEach((header, colIndex) => {
-            // Strip curly braces from the placeholder (e.g., {schoolName} -> schoolName)
-            const key = header.replace(/[{}]/g, '');
-
-            // If the key exists in the values object, place the value into the new row
-            if (values[key] !== undefined) {
-                console.log(`Setting ${key} = ${values[key]}`);  // Debugging line to see the replacement
+            // Check if the header matches a key in the values object
+            const key = header.replace(/[{}]/g, ''); // Remove curly braces from the key name
+            if (values.hasOwnProperty(key)) {
+                // If the key exists in the values object, insert the corresponding value
                 newRow.getCell(colIndex + 1).value = values[key];
             } else {
-                // If no value found for this key, leave the cell blank
-                console.log(`No value for ${key}, leaving cell blank`);  // Debugging line
+                // Otherwise, leave the cell blank
                 newRow.getCell(colIndex + 1).value = null;
             }
         });
     });
 
-    worksheet.spliceRows(18, 1); // Remove the 18th row (the placeholder header row)
+    worksheet.spliceRows(18, 1); // This will remove the 18th row
 
     // Save the updated Excel file after filling in the data
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
     await workbook.xlsx.writeFile(updatedFilePath);
     console.log(`Template filled and saved as "${updatedFilePath}".`);
-}
-
-async function getSchoolDetail() {
-    const groupid = process.env.GROUP_ID;
-    const school_id = process.env.SCHOOL_ID;
-    const API_URL = process.env.API_URL;
-    const group = groupid?.split(",");
-    const url = API_URL;
-
-    const data = {
-        "_school": school_id,
-    };
-
-    try {
-        // Make the POST request
-        const response = await axios.post(url, data);
-
-        // Assuming the response contains school details in the data
-        return response.data.data;
-    } catch (error) {
-        console.error('Error making POST request:', error);
-        return [];
-    }
 }
 
 async function getMarks() {
@@ -104,7 +73,7 @@ async function getMarks() {
     const RANKING_ID = process.env.RANKING_ID;
     const DIVISION_ID = process.env.DIVISION_ID;
     const API_URL = process.env.API_URL;
-    const group = groupid?.split(",");
+    const group = groupid?.split(",")
     const url = API_URL;
 
     const data = {
@@ -126,24 +95,20 @@ async function getMarks() {
     } catch (error) {
         // Handle error
         console.error('Error making POST request:', error);
-        return [];
     }
 }
+
 
 // Main function to execute the file moving and template filling
 async function main() {
     try {
-        // Check if template already exists
-        if (!fs.existsSync(localTemplatePath)) {
-            await downloadTemplate(templateUrl, localTemplatePath);
-        }
 
-        // Get data from API
-        const schoolDetails = await getSchoolDetail();
-        const marks = await getMarks();
+        await downloadTemplate(templateUrl, localTemplatePath);
 
-        // Combine the data as needed
-        const valuesArray = [...schoolDetails, ...marks];
+
+        const valuesArray = await getMarks();
+        console.log('Moving the patrak.xlsx file...', valuesArray);
+
 
         console.log('Filling the template...');
         await fillTemplate(valuesArray);
