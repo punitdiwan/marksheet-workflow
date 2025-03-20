@@ -42,6 +42,7 @@ async function fillTemplate(valuesArray) {
     // Get the 18th row (headers) where the placeholders like {key1}, {key2} are defined
     const headerRow = worksheet.getRow(18);
 
+    const headers = headerRow.values.slice(1); // Removing the first element since it's a row number (ExcelJS behavior)
 
     // Iterate over the valuesArray to insert data into the template
     valuesArray.forEach((values, index) => {
