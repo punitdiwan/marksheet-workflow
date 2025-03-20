@@ -31,6 +31,7 @@ async function fillTemplate(valuesArray) {
         console.error('No values provided to fill the template');
         return;
     }
+
     // Load the Excel file template
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(localTemplatePath);
@@ -41,7 +42,6 @@ async function fillTemplate(valuesArray) {
     // Get the 18th row (headers) where the placeholders like {key1}, {key2} are defined
     const headerRow = worksheet.getRow(18);
 
-    const headers = headerRow.values.slice(1); // Removing the first element since it's a row number (ExcelJS behavior)
 
     // Iterate over the valuesArray to insert data into the template
     valuesArray.forEach((values, index) => {
@@ -50,23 +50,22 @@ async function fillTemplate(valuesArray) {
 
         // Iterate through the headers and match with the keys from the values object
         headers.forEach((header, colIndex) => {
-            // Check if the header matches a key in the values object
-            const key = header.replace(/[{}]/g, ''); // Remove curly braces from the key name
+            // Strip curly braces from the placeholder (e.g., {schoolName} -> schoolName)
+            const key = header.replace(/[{}]/g, '');
 
-            // Search for the corresponding key in the values object
-            const value = values[key];
-
-            if (value !== undefined) {
-                // If the key exists, insert the value into the row cell
-                newRow.getCell(colIndex + 1).value = value;
+            // If the key exists in the values object, place the value into the new row
+            if (values[key] !== undefined) {
+                console.log(`Setting ${key} = ${values[key]}`);  // Debugging line to see the replacement
+                newRow.getCell(colIndex + 1).value = values[key];
             } else {
-                // If no value found, leave the cell blank
+                // If no value found for this key, leave the cell blank
+                console.log(`No value for ${key}, leaving cell blank`);  // Debugging line
                 newRow.getCell(colIndex + 1).value = null;
             }
         });
     });
 
-    worksheet.spliceRows(18, 1); // This will remove the 18th row
+    worksheet.spliceRows(18, 1); // Remove the 18th row (the placeholder header row)
 
     // Save the updated Excel file after filling in the data
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
