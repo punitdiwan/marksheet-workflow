@@ -52,11 +52,15 @@ async function fillTemplate(valuesArray) {
         headers.forEach((header, colIndex) => {
             // Check if the header matches a key in the values object
             const key = header.replace(/[{}]/g, ''); // Remove curly braces from the key name
-            if (values.hasOwnProperty(key)) {
-                // If the key exists in the values object, insert the corresponding value
-                newRow.getCell(colIndex + 1).value = values[key];
+
+            // Search for the corresponding key in the values object
+            const value = values[key];
+
+            if (value !== undefined) {
+                // If the key exists, insert the value into the row cell
+                newRow.getCell(colIndex + 1).value = value;
             } else {
-                // Otherwise, leave the cell blank
+                // If no value found, leave the cell blank
                 newRow.getCell(colIndex + 1).value = null;
             }
         });
@@ -85,10 +89,9 @@ async function getSchoolDetail() {
         // Make the POST request
         const response = await axios.post(url, data);
 
-        // Handle the response
+        // Assuming the response contains school details in the data
         return response.data.data;
     } catch (error) {
-        // Handle error
         console.error('Error making POST request:', error);
         return [];
     }
