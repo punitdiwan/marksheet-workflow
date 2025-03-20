@@ -27,6 +27,10 @@ const outputFolder = path.join(__dirname, 'output');
 
 // Function to fill the template with an array of objects
 async function fillTemplate(valuesArray) {
+    if (!valuesArray || valuesArray.length === 0) {
+        console.error('No values provided to fill the template');
+        return;
+    }
     // Load the Excel file template
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(localTemplatePath);
@@ -66,6 +70,30 @@ async function fillTemplate(valuesArray) {
     console.log(`Template filled and saved as "${updatedFilePath}".`);
 }
 
+async function getSchoolDetail() {
+    const groupid = process.env.GROUP_ID;
+    const school_id = process.env.SCHOOL_ID;
+    const API_URL = process.env.API_URL;
+    const group = groupid?.split(",");
+    const url = API_URL;
+
+    const data = {
+        "_school": school_id,
+    };
+
+    try {
+        // Make the POST request
+        const response = await axios.post(url, data);
+
+        // Handle the response
+        return response.data.data;
+    } catch (error) {
+        // Handle error
+        console.error('Error making POST request:', error);
+        return [];
+    }
+}
+
 async function getMarks() {
     const groupid = process.env.GROUP_ID;
     const batchId = process.env.BATCH_ID;
@@ -73,7 +101,7 @@ async function getMarks() {
     const RANKING_ID = process.env.RANKING_ID;
     const DIVISION_ID = process.env.DIVISION_ID;
     const API_URL = process.env.API_URL;
-    const group = groupid?.split(",")
+    const group = groupid?.split(",");
     const url = API_URL;
 
     const data = {
@@ -95,20 +123,24 @@ async function getMarks() {
     } catch (error) {
         // Handle error
         console.error('Error making POST request:', error);
+        return [];
     }
 }
-
 
 // Main function to execute the file moving and template filling
 async function main() {
     try {
+        // Check if template already exists
+        if (!fs.existsSync(localTemplatePath)) {
+            await downloadTemplate(templateUrl, localTemplatePath);
+        }
 
-        await downloadTemplate(templateUrl, localTemplatePath);
+        // Get data from API
+        const schoolDetails = await getSchoolDetail();
+        const marks = await getMarks();
 
-
-        const valuesArray = await getMarks();
-        console.log('Moving the patrak.xlsx file...', valuesArray);
-
+        // Combine the data as needed
+        const valuesArray = [...schoolDetails, ...marks];
 
         console.log('Filling the template...');
         await fillTemplate(valuesArray);
