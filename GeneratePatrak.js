@@ -45,9 +45,15 @@ async function fillTemplate(valuesArray) {
         const newRow = worksheet.addRow([]);
 
         // Iterate through the headers and match with the keys from the values object
+        // Iterate through the headers and match with the keys from the values object
         headers.forEach((header, colIndex) => {
-            // Check if the header matches a key in the values object
-            const key = header.replace(/[{}]/g, ''); // Remove curly braces from the key name
+            // Ensure the header is a string
+            const headerString = String(header || '');  // Fallback to an empty string if header is undefined or null
+
+            // Remove curly braces from the header (if any)
+            const key = headerString.replace(/[{}]/g, '');
+
+            // Check if the key exists in the values object
             if (values.hasOwnProperty(key)) {
                 // If the key exists in the values object, insert the corresponding value
                 newRow.getCell(colIndex + 1).value = values[key];
@@ -56,6 +62,7 @@ async function fillTemplate(valuesArray) {
                 newRow.getCell(colIndex + 1).value = null;
             }
         });
+
     });
 
     worksheet.spliceRows(18, 1); // This will remove the 18th row
