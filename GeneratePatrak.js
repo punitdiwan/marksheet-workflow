@@ -20,10 +20,7 @@ const downloadTemplate = async (url, outputPath) => {
     }
 };
 
-
-// const localFilePath = path.join(__dirname, 'patrak.xlsx');
 const outputFolder = path.join(__dirname, 'output');
-// const downloadedFilePath = path.join(outputFolder, 'patrak.xlsx');
 
 // Function to fill the template with an array of objects
 async function fillTemplate(valuesArray) {
@@ -37,6 +34,7 @@ async function fillTemplate(valuesArray) {
     // Get the 18th row (headers) where the placeholders like {key1}, {key2} are defined
     const headerRow = worksheet.getRow(18);
 
+    // Extract header values
     const headers = headerRow.values.slice(1); // Removing the first element since it's a row number (ExcelJS behavior)
 
     // Iterate over the valuesArray to insert data into the template
@@ -58,7 +56,8 @@ async function fillTemplate(valuesArray) {
         });
     });
 
-    worksheet.spliceRows(18, 1); // This will remove the 18th row
+    // Remove the header row if needed (optional)
+    // worksheet.spliceRows(18, 1); // This will remove the 18th row if you no longer need it
 
     // Save the updated Excel file after filling in the data
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
