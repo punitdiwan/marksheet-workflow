@@ -36,8 +36,9 @@ async function fillTemplate(valuesArray) {
 
     // Get the 18th row (headers) where the placeholders like {key1}, {key2} are defined
     const headerRow = worksheet.getRow(18);
+    const headers = headerRow.values.map(h => (h ? String(h) : '')).slice(1);
 
-    const headers = headerRow.values.slice(1); // Removing the first element since it's a row number (ExcelJS behavior)
+    valuesArray = valuesArray.filter(obj => Object.keys(obj).length > 0);
 
     // Iterate over the valuesArray to insert data into the template
     valuesArray.forEach((values, index) => {
@@ -45,13 +46,10 @@ async function fillTemplate(valuesArray) {
         const newRow = worksheet.addRow([]);
 
         // Iterate through the headers and match with the keys from the values object
-        // Iterate through the headers and match with the keys from the values object
         headers.forEach((header, colIndex) => {
             // Ensure the header is a string
             const headerString = String(header || '');  // Fallback to an empty string if header is undefined or null
-
-            // Remove curly braces from the header (if any)
-            const key = headerString.replace(/[{}]/g, '');
+            const key = headerString.replace(/[{}]/g, ''); // Remove curly braces from the header (if any)
 
             // Check if the key exists in the values object
             if (values.hasOwnProperty(key)) {
@@ -62,16 +60,22 @@ async function fillTemplate(valuesArray) {
                 newRow.getCell(colIndex + 1).value = null;
             }
         });
-
     });
 
-    worksheet.spliceRows(18, 1); // This will remove the 18th row
+    // Remove the 18th row (which contains the headers or placeholders)
+    worksheet.spliceRows(18, 1);
 
     // Save the updated Excel file after filling in the data
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
-    await workbook.xlsx.writeFile(updatedFilePath);
-    console.log(`Template filled and saved as "${updatedFilePath}".`);
+    try {
+        // Write the workbook to a file, ensuring shared formulas are handled properly
+        await workbook.xlsx.writeFile(updatedFilePath);
+        console.log(`Template filled and saved as "${updatedFilePath}".`);
+    } catch (error) {
+        console.error("Error saving filled template:", error);
+    }
 }
+
 
 async function getMarks() {
     const groupid = process.env.GROUP_ID;
