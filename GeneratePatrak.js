@@ -34,29 +34,33 @@ async function fillTemplate(valuesArray) {
     // Get the 18th row (headers) where the placeholders like {key1}, {key2} are defined
     const headerRow = worksheet.getRow(18);
 
-    // Extract header values
-    const headers = headerRow.values.slice(1); // Removing the first element since it's a row number (ExcelJS behavior)
+    // Extract header values (ignoring the first element which is the row number in ExcelJS)
+    const headers = headerRow.values.slice(1);
+
+    // Start inserting data from row 19
+    let rowIndex = 19;
 
     // Iterate over the valuesArray to insert data into the template
-    valuesArray.forEach((values, index) => {
-        // Create a new row starting from the 19th row (index 19 in Excel)
-        const newRow = worksheet.addRow([]);
+    valuesArray.forEach((values) => {
+        // Select the row to insert data into (starting from row 19)
+        const row = worksheet.getRow(rowIndex);
 
         // Iterate through the headers and match with the keys from the values object
         headers.forEach((header, colIndex) => {
-            // Check if the header matches a key in the values object
-            const key = header.replace(/[{}]/g, ''); // Remove curly braces from the key name
+            // Clean the header to match the key in the values object (remove curly braces)
+            const key = header.replace(/[{}]/g, '');
             if (values.hasOwnProperty(key)) {
                 // If the key exists in the values object, insert the corresponding value
-                newRow.getCell(colIndex + 1).value = values[key];
+                row.getCell(colIndex + 1).value = values[key];
             } else {
                 // Otherwise, leave the cell blank
-                newRow.getCell(colIndex + 1).value = null;
+                row.getCell(colIndex + 1).value = null;
             }
         });
-    });
 
-    // Remove the header row if needed (optional)
+        // Increment row index for the next row
+        rowIndex++;
+    });
     // worksheet.spliceRows(18, 1); // This will remove the 18th row if you no longer need it
 
     // Save the updated Excel file after filling in the data
@@ -105,7 +109,7 @@ async function main() {
 
 
         const valuesArray = await getMarks();
-        console.log('Moving the patrak.xlsx file...', valuesArray);
+        console.log('Filling the template with data...', valuesArray);
 
 
         console.log('Filling the template...');
