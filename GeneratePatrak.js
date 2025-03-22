@@ -63,6 +63,9 @@ async function fillTemplate(valuesArray) {
     });
     // worksheet.spliceRows(18, 1); // This will remove the 18th row if you no longer need it
 
+    // **Force Excel to Recalculate Formulas on Open**
+    workbook.calcProperties.fullCalcOnLoad = true;
+
     // Save the updated Excel file after filling in the data
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
     await workbook.xlsx.writeFile(updatedFilePath);
