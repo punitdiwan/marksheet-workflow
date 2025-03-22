@@ -2,10 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const axios = require('axios');
+require('dotenv').config(); // Load environment variables
 
-// const outputDir = path.resolve(__dirname, 'output');
 const localTemplatePath = path.resolve(__dirname, 'patrak.xlsx');
-require('dotenv').config(); // Load environment variables from .env file
+const outputFolder = path.join(__dirname, 'output');
 const templateUrl = process.env.TEMPLATE_URL;
 
 // Function to download the template file
@@ -20,45 +20,39 @@ const downloadTemplate = async (url, outputPath) => {
     }
 };
 
-const outputFolder = path.join(__dirname, 'output');
-
-// Function to fill the template with an array of objects
+// Function to fill the template with data and formulas
 async function fillTemplate(valuesArray) {
-    // Load the Excel file template
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(localTemplatePath);
-
-    // Select the first worksheet
     const worksheet = workbook.worksheets[0];
 
-    // Get the 18th row (headers) where the placeholders like {key1}, {key2} are defined
+    // Read the 18th row (header row)
     const headerRow = worksheet.getRow(18);
+    const headers = headerRow.values.slice(1); // Extract headers (skip row number)
 
-    // Extract header values (ignoring the first element which is the row number in ExcelJS)
-    const headers = headerRow.values.slice(1);
+    let rowIndex = 19; // Start inserting data from row 19
 
-    // Start inserting data from row 19
-    let rowIndex = 19;
-
-    // Iterate over the valuesArray to insert data into the template
     valuesArray.forEach((values) => {
-        // Select the row to insert data into (starting from row 19)
         const row = worksheet.getRow(rowIndex);
 
-        // Iterate through the headers and match with the keys from the values object
         headers.forEach((header, colIndex) => {
-            // Clean the header to match the key in the values object (remove curly braces)
-            const key = header.replace(/[{}]/g, '');
+            const key = header.replace(/[{}]/g, ''); // Clean header key
+
             if (values.hasOwnProperty(key)) {
-                // If the key exists in the values object, insert the corresponding value
-                row.getCell(colIndex + 1).value = values[key];
+                let cellValue = values[key];
+
+                // If the value is a formula (e.g., "=K19/4"), set it as a formula
+                if (typeof cellValue === 'string' && cellValue.startsWith('=')) {
+                    row.getCell(colIndex + 1).value = { formula: cellValue.substring(1) };
+                } else {
+                    row.getCell(colIndex + 1).value = cellValue ?? null; // Insert value or null
+                }
             } else {
-                // Otherwise, leave the cell blank
-                row.getCell(colIndex + 1).value = null;
+                row.getCell(colIndex + 1).value = null; // Leave empty if no matching key
             }
         });
 
-        // Increment row index for the next row
+        row.commit(); // Save row changes
         rowIndex++;
     });
     // worksheet.spliceRows(18, 1); // This will remove the 18th row if you no longer need it
@@ -66,12 +60,13 @@ async function fillTemplate(valuesArray) {
     // **Force Excel to Recalculate Formulas on Open**
     workbook.calcProperties.fullCalcOnLoad = true;
 
-    // Save the updated Excel file after filling in the data
+    // Save the updated file
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
     await workbook.xlsx.writeFile(updatedFilePath);
     console.log(`Template filled and saved as "${updatedFilePath}".`);
 }
 
+// Function to fetch marks from API
 async function getMarks() {
     const groupid = process.env.GROUP_ID;
     const batchId = process.env.BATCH_ID;
@@ -104,20 +99,13 @@ async function getMarks() {
     }
 }
 
-// Main function to execute the file moving and template filling
+// Main function to execute the process
 async function main() {
     try {
-
         await downloadTemplate(templateUrl, localTemplatePath);
-
-
         const valuesArray = await getMarks();
         console.log('Filling the template with data...', valuesArray);
-
-
-        console.log('Filling the template...');
         await fillTemplate(valuesArray);
-
         console.log('Process completed successfully.');
     } catch (error) {
         console.error('Error during process:', error);
