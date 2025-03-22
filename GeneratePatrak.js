@@ -98,7 +98,7 @@ async function fillTemplate(valuesArray) {
     });
 
     // Delete row 7 (headers) after inserting data
-    // sheet2.spliceRows(7, 1);
+    sheet2.spliceRows(7, 1);
     console.log(`Sheet 2: Deleted row 7.`);
 
     /** ✨ Force Excel to Recalculate Formulas on Open **/
