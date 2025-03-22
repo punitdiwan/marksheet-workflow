@@ -59,7 +59,7 @@ async function fillTemplate(valuesArray) {
     });
 
     // Remove 18th row (headers) if not needed
-    sheet1.spliceRows(18, 1);
+    // sheet1.spliceRows(18, 1);
 
     // Delete 50 extra rows after last data row
     sheet1.spliceRows(lastFilledRow1 + 1, 50);
