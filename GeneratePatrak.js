@@ -58,7 +58,7 @@ async function fillTemplate(valuesArray) {
         rowIndex++;
     });
 
-    // worksheet.spliceRows(18, 1); // Remove the 18th row (headers) if no longer needed
+    worksheet.spliceRows(18, 1); // Remove the 18th row (headers) if no longer needed
 
     // **Delete the next 50 rows after the last filled row**
     worksheet.spliceRows(lastFilledRow + 1, 50);
