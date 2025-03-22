@@ -31,6 +31,7 @@ async function fillTemplate(valuesArray) {
     const headers = headerRow.values.slice(1); // Extract headers (skip row number)
 
     let rowIndex = 19; // Start inserting data from row 19
+    let lastFilledRow = rowIndex; // Track last filled row
 
     valuesArray.forEach((values) => {
         const row = worksheet.getRow(rowIndex);
@@ -53,9 +54,15 @@ async function fillTemplate(valuesArray) {
         });
 
         row.commit(); // Save row changes
+        lastFilledRow = rowIndex; // Update last filled row
         rowIndex++;
     });
-    // worksheet.spliceRows(18, 1); // This will remove the 18th row if you no longer need it
+
+    // worksheet.spliceRows(18, 1); // Remove the 18th row (headers) if no longer needed
+
+    // **Delete the next 50 rows after the last filled row**
+    worksheet.spliceRows(lastFilledRow + 1, 50);
+    console.log(`Deleted 50 rows starting from row ${lastFilledRow + 1}.`);
 
     // **Force Excel to Recalculate Formulas on Open**
     workbook.calcProperties.fullCalcOnLoad = true;
