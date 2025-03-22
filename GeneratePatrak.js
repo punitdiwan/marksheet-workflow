@@ -20,51 +20,88 @@ const downloadTemplate = async (url, outputPath) => {
     }
 };
 
-// Function to fill the template with data and formulas
+// Function to fill both sheets with data
 async function fillTemplate(valuesArray) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(localTemplatePath);
-    const worksheet = workbook.worksheets[0];
 
-    // Read the 18th row (header row)
-    const headerRow = worksheet.getRow(18);
-    const headers = headerRow.values.slice(1); // Extract headers (skip row number)
+    /** ✨ Process First Sheet (Main Sheet) **/
+    const sheet1 = workbook.worksheets[0]; // First sheet
+    const headerRow1 = sheet1.getRow(18); // Header row
+    const headers1 = headerRow1.values.slice(1);
 
-    let rowIndex = 19; // Start inserting data from row 19
-    let lastFilledRow = rowIndex; // Track last filled row
+    let rowIndex1 = 19; // Start inserting from row 19
+    let lastFilledRow1 = rowIndex1;
 
     valuesArray.forEach((values) => {
-        const row = worksheet.getRow(rowIndex);
+        const row = sheet1.getRow(rowIndex1);
 
-        headers.forEach((header, colIndex) => {
-            const key = header.replace(/[{}]/g, ''); // Clean header key
+        headers1.forEach((header, colIndex) => {
+            const key = header.replace(/[{}]/g, ''); // Clean header
 
             if (values.hasOwnProperty(key)) {
                 let cellValue = values[key];
 
-                // If the value is a formula (e.g., "=K19/4"), set it as a formula
+                // If value is a formula (e.g., "=K19/4"), store as formula
                 if (typeof cellValue === 'string' && cellValue.startsWith('=')) {
                     row.getCell(colIndex + 1).value = { formula: cellValue.substring(1) };
                 } else {
-                    row.getCell(colIndex + 1).value = cellValue ?? null; // Insert value or null
+                    row.getCell(colIndex + 1).value = cellValue ?? null;
                 }
             } else {
-                row.getCell(colIndex + 1).value = null; // Leave empty if no matching key
+                row.getCell(colIndex + 1).value = null;
             }
         });
 
-        row.commit(); // Save row changes
-        lastFilledRow = rowIndex; // Update last filled row
-        rowIndex++;
+        row.commit();
+        lastFilledRow1 = rowIndex1;
+        rowIndex1++;
     });
 
-    worksheet.spliceRows(18, 1); // Remove the 18th row (headers) if no longer needed
+    // Remove 18th row (headers) if not needed
+    sheet1.spliceRows(18, 1);
 
-    // **Delete the next 50 rows after the last filled row**
-    worksheet.spliceRows(lastFilledRow + 1, 50);
-    console.log(`Deleted 50 rows starting from row ${lastFilledRow + 1}.`);
+    // Delete 50 extra rows after last data row
+    sheet1.spliceRows(lastFilledRow1 + 1, 50);
+    console.log(`Sheet 1: Deleted 50 rows starting from row ${lastFilledRow1 + 1}.`);
 
-    // **Force Excel to Recalculate Formulas on Open**
+    /** ✨ Process Second Sheet **/
+    const sheet2 = workbook.worksheets[1]; // Second sheet
+    const headerRow2 = sheet2.getRow(7); // Header row
+    const headers2 = headerRow2.values.slice(1);
+
+    let rowIndex2 = 8; // Start inserting from row 8
+    let lastFilledRow2 = rowIndex2;
+
+    valuesArray.forEach((values) => {
+        const row = sheet2.getRow(rowIndex2);
+
+        headers2.forEach((header, colIndex) => {
+            const key = header.replace(/[{}]/g, '');
+
+            if (values.hasOwnProperty(key)) {
+                let cellValue = values[key];
+
+                if (typeof cellValue === 'string' && cellValue.startsWith('=')) {
+                    row.getCell(colIndex + 1).value = { formula: cellValue.substring(1) };
+                } else {
+                    row.getCell(colIndex + 1).value = cellValue ?? null;
+                }
+            } else {
+                row.getCell(colIndex + 1).value = null;
+            }
+        });
+
+        row.commit();
+        lastFilledRow2 = rowIndex2;
+        rowIndex2++;
+    });
+
+    // Delete row 7 (headers) after inserting data
+    // sheet2.spliceRows(7, 1);
+    console.log(`Sheet 2: Deleted row 7.`);
+
+    /** ✨ Force Excel to Recalculate Formulas on Open **/
     workbook.calcProperties.fullCalcOnLoad = true;
 
     // Save the updated file
@@ -95,13 +132,9 @@ async function getMarks() {
     };
 
     try {
-        // Make the POST request
         const response = await axios.post(url, data);
-
-        // Handle the response
         return response.data.data;
     } catch (error) {
-        // Handle error
         console.error('Error making POST request:', error);
     }
 }
