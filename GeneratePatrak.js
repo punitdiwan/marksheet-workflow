@@ -66,41 +66,41 @@ async function fillTemplate(valuesArray) {
     sheet1.spliceRows(lastFilledRow1 + 1, 50);
     console.log(`Sheet 1: Deleted 50 rows starting from row ${lastFilledRow1 + 1}.`);
 
-    /** ✨ Process Second Sheet **/
-    const sheet2 = workbook.worksheets[1]; // Second sheet
-    const headerRow2 = sheet2.getRow(7); // Header row
-    const headers2 = headerRow2.values.slice(1);
+    // /** ✨ Process Second Sheet **/
+    // const sheet2 = workbook.worksheets[1]; // Second sheet
+    // const headerRow2 = sheet2.getRow(7); // Header row
+    // const headers2 = headerRow2.values.slice(1);
 
-    let rowIndex2 = 8; // Start inserting from row 8
-    let lastFilledRow2 = rowIndex2;
+    // let rowIndex2 = 8; // Start inserting from row 8
+    // let lastFilledRow2 = rowIndex2;
 
-    valuesArray.forEach((values) => {
-        const row = sheet2.getRow(rowIndex2);
+    // valuesArray.forEach((values) => {
+    //     const row = sheet2.getRow(rowIndex2);
 
-        headers2.forEach((header, colIndex) => {
-            const key = header.replace(/[{}]/g, '');
+    //     headers2.forEach((header, colIndex) => {
+    //         const key = header.replace(/[{}]/g, '');
 
-            if (values.hasOwnProperty(key)) {
-                let cellValue = values[key];
+    //         if (values.hasOwnProperty(key)) {
+    //             let cellValue = values[key];
 
-                if (typeof cellValue === 'string' && cellValue.startsWith('=')) {
-                    row.getCell(colIndex + 1).value = { formula: cellValue.substring(1) };
-                } else {
-                    row.getCell(colIndex + 1).value = cellValue ?? null;
-                }
-            } else {
-                row.getCell(colIndex + 1).value = null;
-            }
-        });
+    //             if (typeof cellValue === 'string' && cellValue.startsWith('=')) {
+    //                 row.getCell(colIndex + 1).value = { formula: cellValue.substring(1) };
+    //             } else {
+    //                 row.getCell(colIndex + 1).value = cellValue ?? null;
+    //             }
+    //         } else {
+    //             row.getCell(colIndex + 1).value = null;
+    //         }
+    //     });
 
-        row.commit();
-        lastFilledRow2 = rowIndex2;
-        rowIndex2++;
-    });
+    //     row.commit();
+    //     lastFilledRow2 = rowIndex2;
+    //     rowIndex2++;
+    // });
 
-    // Delete row 7 (headers) after inserting data
-    sheet2.spliceRows(7, 1);
-    console.log(`Sheet 2: Deleted row 7.`);
+    // // Delete row 7 (headers) after inserting data
+    // sheet2.spliceRows(7, 1);
+    // console.log(`Sheet 2: Deleted row 7.`);
 
     /** ✨ Force Excel to Recalculate Formulas on Open **/
     workbook.calcProperties.fullCalcOnLoad = true;
