@@ -21,8 +21,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install postgresql-client
 
-      - name: Install DO Space
-        run: npm install -g spaces-cli
+      - name: Install PostgreSQL Client 15
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -c | awk "{print $2}")-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update
+          sudo apt-get install postgresql-client-15 -y
 
       # - name: Setting up Supbase Cli
       #   run: npm install supabase --save-dev
