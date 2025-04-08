@@ -1,0 +1,52 @@
+name: Backup Script for School
+on:
+  workflow_dispatch:
+    branches: [main]
+  schedule:
+    - cron: "30 10 * * *"
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    # runs-on: self-hosted
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@master
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: Install postgres cli
+        run: |
+          sudo apt-get update
+          sudo apt-get install postgresql-client
+
+      - name: Install DO Space
+        run: npm install -g spaces-cli
+
+      # - name: Setting up Supbase Cli
+      #   run: npm install supabase --save-dev
+
+      - name: setting up env
+        run: mkdir -p ./schema_backup
+
+      # - name: Linking Supabase Project
+      #   run: SUPABASE_ACCESS_TOKEN=sbp_23b699a371910fc4ad69a9e08db1896f9784e644 npx supabase link --project-ref zufklshbkyuuzrfpvyza -p zufklshbkyuuzrfpvyza
+
+      - name: Get Project List
+        run: curl -s "https://studio.maitretech.com/rest/v1/projects?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE&is_trial=eq.false" | jq -r ".[] | .prj_name" > $(pwd)/project.txt
+        
+      - name: Taking backup of Schema
+        run: |
+          lines=`cat $(pwd)/project.txt`
+          date=$(date '+%Y-%m-%dT-%H:%M:%S')
+          onlyDate=$(date '+%Y-%m-%d')
+          mkdir -p schema_backup/${date} 
+          for schema in $lines; do
+             noCR=$(echo $schema | sed -e 's/\r//g')
+             PGPASSWORD=your-super-secret-and-long-postgres-password pg_dump -h studio.maitretech.com -p 5432 -U postgres -d postgres --schema ${noCR}  -f ${noCR}_${date}.sql
+             spaces-cli up -s schoolerp-bucket -r blr1 -i DO00Z6BQLU76298YFU2G -k l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo -t schoolscoop-supa/${noCR}/${onlyDate}  ${noCR}_${date}.sql
+          done
+
+      - name: Print Current Working Directory Path
+        run: pwd
