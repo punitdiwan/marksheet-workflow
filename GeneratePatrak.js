@@ -28,10 +28,12 @@ async function fillTemplate(valuesArray) {
     // ✨ Process First Sheet (Main Sheet)
     const sheet1 = workbook.worksheets[0]; // First sheet
     const headerRow1 = sheet1.getRow(18); // Header row
-    const headers1 = headerRow1.values.slice(1).map(header => {
-        // Ensure headers are strings
-        return typeof header === 'string' ? header : (header.text || '');
-    });
+    // const headers1 = headerRow1.values.slice(1).map(header => {
+    //     // Ensure headers are strings
+    //     return typeof header === 'string' ? header : (header.text || '');
+    // });
+
+    const headers1 = headerRow1?.values.slice(1);
 
     let rowIndex1 = 19; // Start inserting from row 19
     let lastFilledRow1 = rowIndex1;
