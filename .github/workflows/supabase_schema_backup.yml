@@ -19,7 +19,10 @@ jobs:
       - name: Install postgres cli
         run: |
           sudo apt-get update
-          sudo apt-get install postgresql-client-15 -y
+          sudo apt-get install postgresql-client
+
+      - name: Install DO Space
+        run: npm install -g spaces-cli
 
       # - name: Setting up Supbase Cli
       #   run: npm install supabase --save-dev
