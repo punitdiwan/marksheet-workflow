@@ -98,16 +98,16 @@ async function fillTemplate(valuesArray, studentData) {
             }
         });
         // Insert student count data for caste categories (into column AO)
-        sheet1.getCell('AO2').value = studentData?.caste?.general?.total ?? 0;
-        sheet1.getCell('AO3').value = studentData?.caste?.obc?.total ?? 0;
-        sheet1.getCell('AO4').value = studentData?.caste?.st?.total ?? 0;
-        sheet1.getCell('AO5').value = studentData?.caste?.sc?.total ?? 0;
-        sheet1.getCell('AO6').value = studentData?.total ?? 0;
+        sheet1.getCell('AR2').value = studentData?.caste?.general?.total ?? 0;
+        sheet1.getCell('AR3').value = studentData?.caste?.obc?.total ?? 0;
+        sheet1.getCell('AR4').value = studentData?.caste?.st?.total ?? 0;
+        sheet1.getCell('AR5').value = studentData?.caste?.sc?.total ?? 0;
+        sheet1.getCell('AR6').value = studentData?.total ?? 0;
 
         // Insert student count data for gender (into column AS)
-        sheet1.getCell('AS4').value = studentData?.gender?.male?.total ?? 0;
-        sheet1.getCell('AS5').value = studentData?.gender?.female?.total ?? 0;
-        sheet1.getCell('AS6').value = studentData?.total ?? 0;
+        sheet1.getCell('AU4').value = studentData?.gender?.male?.total ?? 0;
+        sheet1.getCell('AU5').value = studentData?.gender?.female?.total ?? 0;
+        sheet1.getCell('AU6').value = studentData?.total ?? 0;
 
         row.commit();
         lastFilledRow1 = rowIndex1;
