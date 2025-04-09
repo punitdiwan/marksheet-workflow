@@ -12,7 +12,7 @@ jobs:
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-         script: |
+          script: |
             cd backend
             cd volumes
             echo 'db-schema = "jnpsbhopal"' > postgrest.conf
