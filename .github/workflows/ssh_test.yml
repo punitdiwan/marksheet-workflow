@@ -68,3 +68,6 @@ jobs:
             cat postgrest.conf
             pwd
             psql --version
+            psql -U postgres -d postgres
+            \dn
+            exit
