@@ -150,7 +150,7 @@ async function main() {
     try {
         await downloadTemplate(templateUrl, localTemplatePath);
         const valuesArray = await getMarks();
-        console.log('Filling the template with data...', valuesArray);
+        // console.log('Filling the template with data...', valuesArray);
         await fillTemplate(valuesArray);
         console.log('Process completed successfully.');
     } catch (error) {
