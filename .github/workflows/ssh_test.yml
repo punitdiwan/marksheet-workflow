@@ -19,7 +19,7 @@ jobs:
             cd backend/volumes
 
             # Set the string_to_append value (hardcoded or can be passed dynamically)
-            append_value="new_schema_value"
+            append_value="test_school"
 
             # Define the config file path
             config_file="postgrest.conf"
