@@ -16,8 +16,7 @@ jobs:
           port: 22
           script: |
             # Change to the backend directory
-            cd backend
-            cd volumes
+            cd backend/volumes
 
             # Set the string_to_append value (hardcoded or can be passed dynamically)
             append_value="new_schema_value"
