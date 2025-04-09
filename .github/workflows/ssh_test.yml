@@ -1,9 +1,11 @@
 name: test remote ssh command
 on: [push]
+
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+
     steps:
       - name: executing remote ssh commands using password
         uses: appleboy/ssh-action@v1
@@ -12,4 +14,59 @@ jobs:
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-          script: ls
+          script: |
+            # Change to the backend directory
+            cd backend
+            cd volumes
+
+            # Set the string_to_append value (hardcoded or can be passed dynamically)
+            append_value="new_schema_value"
+
+            # Define the config file path
+            config_file="postgrest.conf"
+
+            # Check if the file exists
+            if [ ! -f "$config_file" ]; then
+                echo "Error: File $config_file not found!"
+                exit 1
+            fi
+
+            # Extract the current db-schema value from the postgrest.conf file
+            de_schema=$(grep -oP 'db-schema\s*=\s*"\K[^"]+' "$config_file")
+
+            # Check if the db-schema was found
+            if [ -z "$de_schema" ]; then
+                echo "Error: db-schema not found in $config_file"
+                exit 1
+            fi
+
+            # Display the original db-schema value
+            echo "The original db-schema value is: $de_schema"
+
+            # Append the input parameter to the db-schema value
+            new_de_schema="${de_schema},${append_value}"
+
+            # Display the updated db-schema value
+            echo "The updated db-schema value is: $new_de_schema"
+
+            # Delete the original file
+            rm -f "$config_file"
+
+            # Create a new postgrest.conf file and write the updated content to it
+            echo "db-schema = \"$new_de_schema\"" > "$config_file"
+
+            # Check if the new file was created successfully and contains the correct value
+            if [ -f "$config_file" ]; then
+                echo "Successfully created new postgrest.conf with updated db-schema."
+                cat "$config_file"  # Display the new file content
+            else
+                echo "Failed to create the new postgrest.conf file."
+            fi
+
+            # List files and display current working directory
+            ls
+            cat postgrest.conf
+            pwd
+            psql --version
+            PGPASSWORD=your-super-secret-and-long-postgres-password psql -h con-de.maitretech.com -p 5433 -U postgres -d postgres -c "NOTIFY pgrst, 'reload config'; NOTIFY pgrst, 'reload schema';"
+            exit
