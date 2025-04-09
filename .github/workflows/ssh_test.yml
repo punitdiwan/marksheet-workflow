@@ -49,7 +49,6 @@ jobs:
             # Display the updated db-schema value
             echo "The updated db-schema value is: $new_de_schema"
 
-            # Delete the original file
             rm -f "$config_file"
 
             # Create a new postgrest.conf file and write the updated content to it
@@ -64,9 +63,9 @@ jobs:
             fi
 
             # List files and display current working directory
-            ls
             cat postgrest.conf
             pwd
             psql --version
-            PGPASSWORD=your-super-secret-and-long-postgres-password psql -h con-de.maitretech.com -p 5433 -U postgres -d postgres -c "NOTIFY pgrst, 'reload config'; NOTIFY pgrst, 'reload schema';"
-            exit
+            PGPASSWORD=your-super-secret-and-long-postgres-password psql -h con-de.maitretech.com -p 5433 -U postgres -d postgres -c "NOTIFY pgrst, 'reload config';"
+            PGPASSWORD=your-super-secret-and-long-postgres-password psql -h con-de.maitretech.com -p 5433 -U postgres -d postgres -c "NOTIFY pgrst, 'reload schema';"
+
