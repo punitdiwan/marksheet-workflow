@@ -116,7 +116,6 @@ async function fillTemplate(valuesArray, studentData) {
 
     // Remove 18th row (headers) if not needed
     // sheet1.spliceRows(18, 1);
-    sheet1.getRow(18).hidden = true;
 
     // Delete 50 extra rows after last data row
     sheet1.spliceRows(lastFilledRow1 + 1, 50);
@@ -160,6 +159,8 @@ async function fillTemplate(valuesArray, studentData) {
 
     /** ✨ Force Excel to Recalculate Formulas on Open **/
     workbook.calcProperties.fullCalcOnLoad = true;
+
+    sheet1.getRow(18).hidden = true;
 
     // Save the updated file
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
