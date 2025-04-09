@@ -13,6 +13,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           script: |
-              cd backend
-              cd volumes
+              /backend/volumes
               ls
+              pwd
