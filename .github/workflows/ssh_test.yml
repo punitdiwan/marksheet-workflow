@@ -48,7 +48,7 @@ jobs:
             # Display the updated db-schema value
             echo "The updated db-schema value is: $new_de_schema"
 
-            rm -f "$config_file"
+            # rm -f "$config_file"
 
             # Create a new postgrest.conf file and write the updated content to it
             echo "db-schema = \"$new_de_schema\"" > "$config_file"
