@@ -5,10 +5,11 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - name: executing remote ssh commands using password
+      - name: executing remote ssh commands using ssh key
         uses: appleboy/ssh-action@v1
         with:
-          host: "con-de.maitretech.com"
-          username: "root"
-          key: "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAArAAAABNlY2RzYS1zaGEyLW5pc3RwNTIxAAAACG5pc3RwNTIxAAAAhQQBXE+NtBwnFzqJK3LRkhT6faSY1M+3P4/wNosDCrVSEy9YoLPR+zXJro5gBMDdqft64mzrhQoEiJmszTT8bcfu36AAfL/bWBsHfRnx7sk0L50Ptmx4JHrl0qorBA0rZ+JIxjX/d5Mw6ZzGG6SYAdbXuCAPdqdgm7DEOqxFFgYHmK2FbogAAAEgaZgK4mmYCuIAAAATZWNkc2Etc2hhMi1uaXN0cDUyMQAAAAhuaXN0cDUyMQAAAIUEAVxPjbQcJxc6iSty0ZIU+n2kmNTPtz+P8DaLAwq1UhMvWKCz0fs1ya6OYATA3an7euJs64UKBIiZrM00/G3H7t+gAHy/21gbB30Z8e7JNC+dD7ZseCR65dKqKwQNK2fiSMY1/3eTMOmcxhukmAHW17ggD3anYJuwxDqsRRYGB5ithW6IAAAAQgFnZajVGokfoSo5jqXkUH6OdTxYPwIE0/fd5STfdOyxOjoz3QQPvb8PVejqsTsztOKU+PgxfM7oSXtisnVeJw8oDAAAACFyb290QHZtaTIxMzk3NTYuY29udGFib3NlcnZlci5uZXQB"
+          host: con-de.maitretech.com
+          username: root
+          port: 22
+          key: b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAArAAAABNlY2RzYS1zaGEyLW5pc3RwNTIxAAAACG5pc3RwNTIxAAAAhQQBXE+NtBwnFzqJK3LRkhT6faSY1M+3P4/wNosDCrVSEy9YoLPR+zXJro5gBMDdqft64mzrhQoEiJmszTT8bcfu36AAfL/bWBsHfRnx7sk0L50Ptmx4JHrl0qorBA0rZ+JIxjX/d5Mw6ZzGG6SYAdbXuCAPdqdgm7DEOqxFFgYHmK2FbogAAAEgaZgK4mmYCuIAAAATZWNkc2Etc2hhMi1uaXN0cDUyMQAAAAhuaXN0cDUyMQAAAIUEAVxPjbQcJxc6iSty0ZIU+n2kmNTPtz+P8DaLAwq1UhMvWKCz0fs1ya6OYATA3an7euJs64UKBIiZrM00/G3H7t+gAHy/21gbB30Z8e7JNC+dD7ZseCR65dKqKwQNK2fiSMY1/3eTMOmcxhukmAHW17ggD3anYJuwxDqsRRYGB5ithW6IAAAAQgFnZajVGokfoSo5jqXkUH6OdTxYPwIE0/fd5STfdOyxOjoz3QQPvb8PVejqsTsztOKU+PgxfM7oSXtisnVeJw8oDAAAACFyb290QHZtaTIxMzk3NTYuY29udGFib3NlcnZlci5uZXQB
           script: whoami
