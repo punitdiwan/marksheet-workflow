@@ -16,11 +16,10 @@ jobs:
           port: 22
           script: |
             # Change to the backend directory
-            cd backend
-            cd volumes
+            cd backend/volumes
 
             # Set the string_to_append value (hardcoded or can be passed dynamically)
-            append_value="new_schema_value"
+            append_value="test_school"
 
             # Define the config file path
             config_file="postgrest.conf"
@@ -49,7 +48,7 @@ jobs:
             # Display the updated db-schema value
             echo "The updated db-schema value is: $new_de_schema"
 
-            rm -f "$config_file"
+            # rm -f "$config_file"
 
             # Create a new postgrest.conf file and write the updated content to it
             echo "db-schema = \"$new_de_schema\"" > "$config_file"
