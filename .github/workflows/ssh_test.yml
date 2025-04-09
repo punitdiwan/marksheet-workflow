@@ -67,3 +67,4 @@ jobs:
             ls
             cat postgrest.conf
             pwd
+            psql --version
