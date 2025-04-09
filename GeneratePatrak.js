@@ -116,7 +116,7 @@ async function fillTemplate(valuesArray, studentData) {
 
     // Remove 18th row (headers) if not needed
     // sheet1.spliceRows(18, 1);
-    // sheet1.getRow(18).hidden = true;
+    sheet1.getRow(18).hidden = true;
 
     // Delete 50 extra rows after last data row
     sheet1.spliceRows(lastFilledRow1 + 1, 50);
@@ -200,8 +200,8 @@ async function getMarks() {
 async function main() {
     try {
         await downloadTemplate(templateUrl, localTemplatePath);
-        const valuesArray = await getMarks();  // Fetch the marks data
-        const studentData = await getStudentCount();  // Fetch the student count data
+        const valuesArray = await getMarks();
+        const studentData = await getStudentCount();
         // console.log('Filling the template with data...', valuesArray);
         await fillTemplate(valuesArray, studentData);
         console.log('Process completed successfully.');
