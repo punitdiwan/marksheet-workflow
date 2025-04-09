@@ -22,6 +22,10 @@ const downloadTemplate = async (url, outputPath) => {
 
 // Function to fetch student count data from API
 async function getStudentCount() {
+
+    const batchId = process.env.BATCH_ID;
+    const _school = process.env.SCHOOL_ID;
+
     const payload2 = {
         "_school": _school,
         "batchId": batchId
