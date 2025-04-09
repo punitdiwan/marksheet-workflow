@@ -20,8 +20,37 @@ const downloadTemplate = async (url, outputPath) => {
     }
 };
 
+// Function to fetch student count data from API
+async function getStudentCount() {
+    const payload2 = {
+        "_school": _school,
+        "batchId": batchId
+    };
+
+    try {
+        const studentResponse = await fetch('/api/cce_examv1/studentCount', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload2),
+        });
+
+        if (!studentResponse.ok) {
+            throw new Error('Failed to fetch student count data.');
+        }
+
+        const studentData = await studentResponse.json();
+        return studentData.data;
+    } catch (error) {
+        console.error('Error fetching student count:', error);
+        throw error;
+    }
+}
+
+
 // Function to fill both sheets with data
-async function fillTemplate(valuesArray) {
+async function fillTemplate(valuesArray, studentData) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(localTemplatePath);
 
@@ -57,6 +86,17 @@ async function fillTemplate(valuesArray) {
                 row.getCell(colIndex + 1).value = null;
             }
         });
+        // Insert student count data for caste categories (into column AO)
+        sheet1.getCell('AO2').value = studentData.caste.general.total;  // General count
+        sheet1.getCell('AO3').value = studentData.caste.obc.total;  // OBC count
+        sheet1.getCell('AO4').value = studentData.caste.st.total;  // ST count
+        sheet1.getCell('AO5').value = studentData.caste.sc.total;  // SC count
+        sheet1.getCell('AO6').value = studentData.total;  // Total count
+
+        // Insert student count data for gender (into column AS)
+        sheet1.getCell('AS4').value = studentData.gender.male.total;  // Male count
+        sheet1.getCell('AS5').value = studentData.gender.female.total;  // Female count
+        sheet1.getCell('AS6').value = studentData.total;  // Total count
 
         row.commit();
         lastFilledRow1 = rowIndex1;
@@ -149,9 +189,10 @@ async function getMarks() {
 async function main() {
     try {
         await downloadTemplate(templateUrl, localTemplatePath);
-        const valuesArray = await getMarks();
+        const valuesArray = await getMarks();  // Fetch the marks data
+        const studentData = await getStudentCount();  // Fetch the student count data
         // console.log('Filling the template with data...', valuesArray);
-        await fillTemplate(valuesArray);
+        await fillTemplate(valuesArray, studentData);
         console.log('Process completed successfully.');
     } catch (error) {
         console.error('Error during process:', error);
