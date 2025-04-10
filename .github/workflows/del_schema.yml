@@ -20,11 +20,11 @@ jobs:
             config_file="postgrest.conf"
 
             # Extract the schema names from the config file
-            de_schema=$(grep -oP 'db-schema\s*=\s*"\K[^"]+' "$config_file")
+            db-schemas=$(grep -oP 'db-schema\s*=\s*"\K[^"]+' "$config_file")
             del_schema="jnpsbhopal"
 
             # Convert the extracted comma-separated list into a JSON array
-            array=$(echo "$de_schema" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+            array=$(echo "$db-schemas" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
 
             # Remove the del_schema ("zeeshan") from the array using jq
             filtered_array=$(echo "$array" | jq --arg del_schema "$del_schema" '[.[] | select(. != $del_schema)]')
@@ -45,7 +45,7 @@ jobs:
             # Remove the leading comma, if it exists
             cleaned_str=$(echo "$str" | sed 's/^,//')
 
-            echo "db-schema = \"$cleaned_str\"" > "$config_file"
+            echo "db-schemas = \"$cleaned_str\"" > "$config_file"
             # List files and display current working directory
             cat postgrest.conf
             pwd
