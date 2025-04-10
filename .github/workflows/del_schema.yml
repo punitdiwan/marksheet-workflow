@@ -17,49 +17,37 @@ jobs:
           script: |
             # Change to the backend directory
             cd backend/volumes
-            append_value="test_school"
-
-            # Define the config file path
             config_file="postgrest.conf"
 
-            # Check if the file exists
-            if [ ! -f "$config_file" ]; then
-                echo "Error: File $config_file not found!"
-                exit 1
-            fi
-
-            # Extract the current db-schema value from the postgrest.conf file
+            # Extract the schema names from the config file
             de_schema=$(grep -oP 'db-schema\s*=\s*"\K[^"]+' "$config_file")
+            del_schema="jnpsbhopal"
 
-            # Check if the db-schema was found
-            if [ -z "$de_schema" ]; then
-                echo "Error: db-schema not found in $config_file"
-                exit 1
-            fi
+            # Convert the extracted comma-separated list into a JSON array
+            array=$(echo "$de_schema" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
 
-            # Display the original db-schema value
-            echo "The original db-schema value is: $de_schema"
+            # Remove the del_schema ("zeeshan") from the array using jq
+            filtered_array=$(echo "$array" | jq --arg del_schema "$del_schema" '[.[] | select(. != $del_schema)]')
 
-            # Remove the append_value from the db-schema value
-            new_de_schema=$(echo "$de_schema" | sed "s/,${append_value}//g")
+            # Print the filtered array
+            echo "Filtered array: $filtered_array"
 
-            # Display the updated db-schema value
-            echo "The updated db-schema value is: $new_de_schema"
+            append=""
 
-            # Create a new postgrest.conf file and write the updated content to it
-            echo "db-schema = \"$new_de_schema\"" > "$config_file"
+            for item in $(echo "$filtered_array" | jq -r '.[]'); do
+                echo "$item"
+                append="${append},${item}"
+            done
+            echo "$append"
 
-            # Check if the new file was created successfully and contains the correct value
-            if [ -f "$config_file" ]; then
-                echo "Successfully created new postgrest.conf with updated db-schema."
-                cat "$config_file"  # Display the new file content
-            else
-                echo "Failed to create the new postgrest.conf file."
-            fi
+            str=$append
 
+            # Remove the leading comma, if it exists
+            cleaned_str=$(echo "$str" | sed 's/^,//')
+
+            echo "db-schema = \"$cleaned_str\"" > "$config_file"
             # List files and display current working directory
             cat postgrest.conf
-
             pwd
             psql --version
             PGPASSWORD=your-super-secret-and-long-postgres-password psql -h con-de.maitretech.com -p 5433 -U postgres -d postgres -c "NOTIFY pgrst, 'reload config';"
