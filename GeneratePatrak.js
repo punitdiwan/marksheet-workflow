@@ -120,7 +120,7 @@ async function fillTemplate(valuesArray, studentData) {
 
     // Delete 50 extra rows after last data row
     sheet1.spliceRows(lastFilledRow1 + 1, 100);
-    console.log(`Sheet 1: Deleted 50 rows starting from row ${lastFilledRow1 + 1}.`);
+    console.log(`Sheet 1: Deleted 100 rows starting from row ${lastFilledRow1 + 1}.`);
 
     // /** ✨ Process Second Sheet **/
     // const sheet2 = workbook.worksheets[1]; // Second sheet
