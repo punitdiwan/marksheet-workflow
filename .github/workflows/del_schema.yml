@@ -23,7 +23,7 @@ jobs:
             arr=$(grep -oP 'db-schemas\s*=\s*"\K[^"]+' "$config_file")
 
             # Value to filter out
-            filter="creativeschool"
+            filter="seedlingsschool"
 
             # Convert the string into an array
             IFS=',' read -ra arr_items <<< "$arr"
