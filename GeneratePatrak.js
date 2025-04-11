@@ -119,7 +119,7 @@ async function fillTemplate(valuesArray, studentData) {
     sheet1.getRow(18).hidden = true;
 
     // Delete 50 extra rows after last data row
-    sheet1.spliceRows(lastFilledRow1 + 1, 50);
+    sheet1.spliceRows(lastFilledRow1 + 1, 100);
     console.log(`Sheet 1: Deleted 50 rows starting from row ${lastFilledRow1 + 1}.`);
 
     // /** ✨ Process Second Sheet **/
