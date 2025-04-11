@@ -18,6 +18,33 @@ jobs:
             # Change to the backend directory
             cd backend/volumes
             cat postgrest.conf
+            config_file="postgrest.conf"
+            # Original comma-separated string
+            arr=$(grep -oP 'db-schemas\s*=\s*"\K[^"]+' "$config_file")
+
+            # Value to filter out
+            filter="jnpsbhopal"
+
+            # Convert the string into an array
+            IFS=',' read -ra arr_items <<< "$arr"
+            echo "$arr_items"
+
+            # Filter the array
+            result=""
+            for item in "${arr_items[@]}"; do
+                item=$(echo "$item" | xargs)
+              if [[ "$item" != "$filter" ]]; then
+                if [[ -n "$result" ]]; then
+                  result+=", "
+                fi
+                result+="$item"
+              fi
+            done
+
+            echo "$result"
+            echo "db-schemas = \"$result\"" > "$config_file"
+            cat postgrest.conf
+
             pwd
             psql --version
             # PGPASSWORD=your-super-secret-and-long-postgres-password psql -h con-de.maitretech.com -p 5433 -U postgres -d postgres -c "NOTIFY pgrst, 'reload config';"

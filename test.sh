@@ -50,7 +50,7 @@ for item in "${arr_items[@]}"; do
     item=$(echo "$item" | xargs)
   if [[ "$item" != "$filter" ]]; then
     if [[ -n "$result" ]]; then
-      result+=","
+      result+=", "
     fi
     result+="$item"
   fi
