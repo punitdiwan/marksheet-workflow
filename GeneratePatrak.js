@@ -50,7 +50,7 @@ async function getStudentCount() {
         }
 
         const studentData = await studentResponse.json();
-        console.log("studentDataCount", studentData);
+        console.log("studentDataCount:==", studentData);
 
         return studentData.data;
     } catch (error) {
