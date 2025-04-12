@@ -78,6 +78,10 @@ async function fillTemplate(valuesArray, studentData) {
     let rowIndex1 = 19; // Start inserting from row 19
     let lastFilledRow1 = rowIndex1;
 
+    // Log before modification
+    console.log("Row 19 before modification:", sheet1.getRow(19).values);
+
+    // Fill the row with data
     valuesArray.forEach((values) => {
         const row = sheet1.getRow(rowIndex1);
 
@@ -109,16 +113,24 @@ async function fillTemplate(valuesArray, studentData) {
         sheet1.getCell('AU5').value = studentData?.gender?.female?.total ?? 0;
         sheet1.getCell('AU6').value = studentData?.total ?? 0;
 
+        // After filling row 19, log the formula inserted
+        sheet1.getRow(rowIndex1).eachCell((cell, colNumber) => {
+            console.log(`Formula in Row 19, Column ${colNumber}:`, cell.formula);
+        });
+
         row.commit();
         lastFilledRow1 = rowIndex1;
         rowIndex1++;
     });
 
-    // Remove 18th row (headers) if not needed
-    // sheet1.spliceRows(18, 1);
-    sheet1.getRow(18).hidden = true;
+    // Log after modification and commit
+    console.log("Row 19 after modification:", sheet1.getRow(19).values);
 
-    // Delete 50 extra rows after last data row
+    // Check if row 19 is hidden
+    console.log("Is row 19 hidden?", sheet1.getRow(19).hidden);
+
+    // After filling the template, write to the file
+    sheet1.getRow(18).hidden = true;
     sheet1.spliceRows(lastFilledRow1 + 1, 100);
     console.log(`Sheet 1: Deleted 100 rows starting from row ${lastFilledRow1 + 1}.`);
 
@@ -162,7 +174,6 @@ async function fillTemplate(valuesArray, studentData) {
     workbook.calcProperties.fullCalcOnLoad = true;
 
 
-    // Save the updated file
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
     await workbook.xlsx.writeFile(updatedFilePath);
     console.log(`Template filled and saved as "${updatedFilePath}".`);
