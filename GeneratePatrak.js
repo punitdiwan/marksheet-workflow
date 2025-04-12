@@ -78,9 +78,6 @@ async function fillTemplate(valuesArray, studentData) {
     let rowIndex1 = 19; // Start inserting from row 19
     let lastFilledRow1 = rowIndex1;
 
-    // Log before modification
-    console.log("Row 19 before modification:", sheet1.getRow(19).values);
-
     // Fill the row with data
     valuesArray.forEach((values) => {
         const row = sheet1.getRow(rowIndex1);
@@ -115,7 +112,6 @@ async function fillTemplate(valuesArray, studentData) {
 
         // After filling row 19, log the formula inserted
         sheet1.getRow(rowIndex1).eachCell((cell, colNumber) => {
-            console.log(`Formula in Row 19, Column ${colNumber}:`, cell.formula);
         });
 
         row.commit();
@@ -123,11 +119,6 @@ async function fillTemplate(valuesArray, studentData) {
         rowIndex1++;
     });
 
-    // Log after modification and commit
-    console.log("Row 19 after modification:", sheet1.getRow(19).values);
-
-    // Check if row 19 is hidden
-    console.log("Is row 19 hidden?", sheet1.getRow(19).hidden);
 
     // After filling the template, write to the file
     sheet1.getRow(18).hidden = true;
@@ -170,16 +161,13 @@ async function fillTemplate(valuesArray, studentData) {
     // sheet2.spliceRows(7, 1);
     // console.log(`Sheet 2: Deleted row 7.`);
 
-    console.log("Formulas in Row 19 after filling:");
     sheet1.getRow(19).eachCell((cell, colNumber) => {
-        console.log(`Column ${colNumber}: Value=${cell.value}, Formula=${cell.formula}, Result=${cell.result}`);
     });
 
     /** ✨ Force Excel to Recalculate Formulas on Open **/
     workbook.calcProperties.calcMode = 'auto';
     workbook.calcProperties.fullCalcOnLoad = true;
     workbook.calcProperties.calcOnSave = true;
-    console.log("Calculation properties set: calcMode=auto, fullCalcOnLoad=true, calcOnSave=true");
 
 
     sheet1.eachRow({ includeEmpty: false }, (row, rowNumber) => {
