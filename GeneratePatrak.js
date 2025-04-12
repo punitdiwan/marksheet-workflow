@@ -173,6 +173,7 @@ async function fillTemplate(valuesArray, studentData) {
     /** ✨ Force Excel to Recalculate Formulas on Open **/
     workbook.calcProperties.calcMode = 'auto';
     workbook.calcProperties.fullCalcOnLoad = true;
+    console.log(`claculation mode auto  `);
 
 
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
