@@ -171,6 +171,7 @@ async function fillTemplate(valuesArray, studentData) {
     // console.log(`Sheet 2: Deleted row 7.`);
 
     /** ✨ Force Excel to Recalculate Formulas on Open **/
+    workbook.calcProperties.calcMode = 'auto';
     workbook.calcProperties.fullCalcOnLoad = true;
 
 
