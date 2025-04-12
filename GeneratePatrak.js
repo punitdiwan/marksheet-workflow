@@ -170,11 +170,27 @@ async function fillTemplate(valuesArray, studentData) {
     // sheet2.spliceRows(7, 1);
     // console.log(`Sheet 2: Deleted row 7.`);
 
+    console.log("Formulas in Row 19 after filling:");
+    sheet1.getRow(19).eachCell((cell, colNumber) => {
+        console.log(`Column ${colNumber}: Value=${cell.value}, Formula=${cell.formula}, Result=${cell.result}`);
+    });
+
     /** ✨ Force Excel to Recalculate Formulas on Open **/
     workbook.calcProperties.calcMode = 'auto';
     workbook.calcProperties.fullCalcOnLoad = true;
-    console.log(`claculation mode auto  `);
+    workbook.calcProperties.calcOnSave = true;
+    console.log("Calculation properties set: calcMode=auto, fullCalcOnLoad=true, calcOnSave=true");
 
+
+    sheet1.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+        if (rowNumber >= 19) {
+            row.eachCell((cell) => {
+                if (cell.formula) {
+                    cell.value = { formula: cell.formula, result: null };
+                }
+            });
+        }
+    });
 
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
     await workbook.xlsx.writeFile(updatedFilePath);
