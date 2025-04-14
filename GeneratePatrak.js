@@ -2,13 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const axios = require('axios');
-require('dotenv').config(); // Load environment variables
+require('dotenv').config();
 
 const localTemplatePath = path.resolve(__dirname, 'patrak.xlsx');
 const outputFolder = path.join(__dirname, 'output');
 const templateUrl = process.env.TEMPLATE_URL;
 
-// Function to download the template file
 const downloadTemplate = async (url, outputPath) => {
     try {
         const response = await axios.get(url, { responseType: 'arraybuffer' });
@@ -20,10 +19,8 @@ const downloadTemplate = async (url, outputPath) => {
     }
 };
 
-// Function to fetch student count data from API
 async function getStudentCount() {
-
-    const batchIds = process.env.BATCH_ID.split(','); // Split comma-separated batch IDs
+    const batchIds = process.env.BATCH_ID.split(',');
     const _school = process.env.SCHOOL_ID;
 
     if (!_school) {
@@ -60,29 +57,22 @@ async function getStudentCount() {
         }
     }
 
-    return studentCounts; // Return an object with batch IDs as keys
+    return studentCounts;
 }
 
 
-// Function to fill both sheets with data
+
 async function fillTemplate(valuesArray, studentCounts) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(localTemplatePath);
 
-    // ✨ Process First Sheet (Main Sheet)
-    const sheet1 = workbook.worksheets[0]; // First sheet
-    const headerRow1 = sheet1.getRow(18); // Header row
-    // const headers1 = headerRow1.values.slice(1).map(header => {
-    //     // Ensure headers are strings
-    //     return typeof header === 'string' ? header : (header.text || '');
-    // });
-
+    const sheet1 = workbook.worksheets[0];
+    const headerRow1 = sheet1.getRow(18);
     const headers1 = headerRow1?.values.slice(1);
 
-    let rowIndex1 = 19; // Start inserting from row 19
+    let rowIndex1 = 19;
     let lastFilledRow1 = rowIndex1;
 
-    // Group valuesArray by batch_name
     const groupedByBatch = valuesArray.reduce((acc, value) => {
         const batchName = value.batch_name;
         if (!acc[batchName]) {
@@ -92,31 +82,23 @@ async function fillTemplate(valuesArray, studentCounts) {
         return acc;
     }, {});
 
-    // Iterate over each batch
     for (const [batchName, batchValues] of Object.entries(groupedByBatch)) {
-        // Find corresponding batch ID (assuming batch_name is unique and can be mapped back)
-        const batchId = Object.keys(studentCounts).find(id => {
-            return studentCounts[id].batch_name === batchName;
-        });
-
+        const batchId = Object.keys(studentCounts).find(id => studentCounts[id].batch_name === batchName);
         const studentData = batchId ? studentCounts[batchId] : {};
 
-        // Add batch header (optional)
         const batchHeaderRow = sheet1.getRow(rowIndex1);
         batchHeaderRow.getCell(1).value = `Batch: ${batchName}`;
         batchHeaderRow.font = { bold: true };
         rowIndex1++;
 
-        // Fill student data for this batch
         batchValues.forEach((values) => {
             const row = sheet1.getRow(rowIndex1);
 
             headers1.forEach((header, colIndex) => {
-                const key = header.replace(/[{}]/g, ''); // Clean header
+                const key = header.replace(/[{}]/g, '');
 
                 if (values.hasOwnProperty(key)) {
                     let cellValue = values[key];
-
                     if (typeof cellValue === 'string' && cellValue.startsWith('=')) {
                         row.getCell(colIndex + 1).value = { formula: cellValue.substring(1) };
                     } else {
@@ -132,7 +114,7 @@ async function fillTemplate(valuesArray, studentCounts) {
             rowIndex1++;
         });
 
-        // Insert student count data for this batch
+        // Insert student count data for the batch
         sheet1.getCell('AR2').value = studentData?.caste?.general?.total ?? 0;
         sheet1.getCell('AR3').value = studentData?.caste?.obc?.total ?? 0;
         sheet1.getCell('AR4').value = studentData?.caste?.st?.total ?? 0;
@@ -207,12 +189,25 @@ async function fillTemplate(valuesArray, studentCounts) {
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
     await workbook.xlsx.writeFile(updatedFilePath);
     console.log(`Template filled and saved as "${updatedFilePath}".`);
-}
 
-// Function to fetch marks from API
+    // Update single job history entry
+    // const jobId = process.env.JOB_ID;
+    // const jobUrl = process.env.JOB_URL;
+
+    // try {
+    //     await axios.post(jobUrl, {
+    //         job_id: jobId,
+    //         status: 'Complete',
+    //         file_path: updatedFilePath
+    //     });
+    //     console.log(`Updated job ${jobId}`);
+    // } catch (error) {
+    //     console.error(`Error updating job ${jobId}:`, error);
+    // }
+}
 async function getMarks() {
     const groupid = process.env.GROUP_ID;
-    const batchIds = process.env.BATCH_ID.split(','); // Split comma-separated batch IDs
+    const batchIds = process.env.BATCH_ID; // Comma-separated
     const _school = process.env.SCHOOL_ID;
     const RANKING_ID = process.env.RANKING_ID;
     const DIVISION_ID = process.env.DIVISION_ID;
@@ -222,7 +217,7 @@ async function getMarks() {
 
     const data = {
         "_school": _school,
-        "batchId": batchIds, // Pass array of batch IDs
+        "batchId": batchIds,
         "group": group,
         "currentdata": {
             "division_id": DIVISION_ID,
@@ -239,7 +234,6 @@ async function getMarks() {
     }
 }
 
-// Main function to execute the process
 async function main() {
     try {
         await downloadTemplate(templateUrl, localTemplatePath);
