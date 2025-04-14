@@ -23,45 +23,49 @@ const downloadTemplate = async (url, outputPath) => {
 // Function to fetch student count data from API
 async function getStudentCount() {
 
-    const batchId = process.env.BATCH_ID;
+    const batchIds = process.env.BATCH_ID.split(','); // Split comma-separated batch IDs
     const _school = process.env.SCHOOL_ID;
 
     if (!_school) {
         throw new Error('SCHOOL_ID is not defined in the environment variables.');
     }
 
-    const payload2 = {
-        "_school": _school,
-        "batchId": batchId
-    };
+    const studentCounts = {};
 
-    try {
-        const fullUrl = `https://${_school}.edusparsh.com/api/cce_examv1/studentCount`;
-        const studentResponse = await fetch(fullUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload2),
-        });
+    for (const batchId of batchIds) {
+        const payload = {
+            "_school": _school,
+            "batchId": batchId
+        };
 
-        if (!studentResponse.ok) {
-            throw new Error('Failed to fetch student count data.');
+        try {
+            const fullUrl = `https://${_school}.edusparsh.com/api/cce_examv1/studentCount`;
+            const studentResponse = await fetch(fullUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload),
+            });
+
+            if (!studentResponse.ok) {
+                throw new Error(`Failed to fetch student count data for batch ${batchId}.`);
+            }
+
+            const studentData = await studentResponse.json();
+            studentCounts[batchId] = studentData.data;
+        } catch (error) {
+            console.error(`Error fetching student count for batch ${batchId}:`, error);
+            throw error;
         }
-
-        const studentData = await studentResponse.json();
-        console.log("studentDataCount:==", studentData);
-
-        return studentData.data;
-    } catch (error) {
-        console.error('Error fetching student count:', error);
-        throw error;
     }
+
+    return studentCounts; // Return an object with batch IDs as keys
 }
 
 
 // Function to fill both sheets with data
-async function fillTemplate(valuesArray, studentData) {
+async function fillTemplate(valuesArray, studentCounts) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(localTemplatePath);
 
@@ -78,47 +82,70 @@ async function fillTemplate(valuesArray, studentData) {
     let rowIndex1 = 19; // Start inserting from row 19
     let lastFilledRow1 = rowIndex1;
 
-    // Fill the row with data
-    valuesArray.forEach((values) => {
-        const row = sheet1.getRow(rowIndex1);
+    // Group valuesArray by batch_name
+    const groupedByBatch = valuesArray.reduce((acc, value) => {
+        const batchName = value.batch_name;
+        if (!acc[batchName]) {
+            acc[batchName] = [];
+        }
+        acc[batchName].push(value);
+        return acc;
+    }, {});
 
-        headers1.forEach((header, colIndex) => {
-            const key = header.replace(/[{}]/g, ''); // Clean header
-
-            if (values.hasOwnProperty(key)) {
-                let cellValue = values[key];
-
-                // If value is a formula (e.g., "=K19/4"), store as formula
-                if (typeof cellValue === 'string' && cellValue.startsWith('=')) {
-                    row.getCell(colIndex + 1).value = { formula: cellValue.substring(1) };
-                } else {
-                    row.getCell(colIndex + 1).value = cellValue ?? null;
-                }
-            } else {
-                row.getCell(colIndex + 1).value = null;
-            }
+    // Iterate over each batch
+    for (const [batchName, batchValues] of Object.entries(groupedByBatch)) {
+        // Find corresponding batch ID (assuming batch_name is unique and can be mapped back)
+        const batchId = Object.keys(studentCounts).find(id => {
+            return studentCounts[id].batch_name === batchName;
         });
-        // Insert student count data for caste categories (into column AO)
+
+        const studentData = batchId ? studentCounts[batchId] : {};
+
+        // Add batch header (optional)
+        const batchHeaderRow = sheet1.getRow(rowIndex1);
+        batchHeaderRow.getCell(1).value = `Batch: ${batchName}`;
+        batchHeaderRow.font = { bold: true };
+        rowIndex1++;
+
+        // Fill student data for this batch
+        batchValues.forEach((values) => {
+            const row = sheet1.getRow(rowIndex1);
+
+            headers1.forEach((header, colIndex) => {
+                const key = header.replace(/[{}]/g, ''); // Clean header
+
+                if (values.hasOwnProperty(key)) {
+                    let cellValue = values[key];
+
+                    if (typeof cellValue === 'string' && cellValue.startsWith('=')) {
+                        row.getCell(colIndex + 1).value = { formula: cellValue.substring(1) };
+                    } else {
+                        row.getCell(colIndex + 1).value = cellValue ?? null;
+                    }
+                } else {
+                    row.getCell(colIndex + 1).value = null;
+                }
+            });
+
+            row.commit();
+            lastFilledRow1 = rowIndex1;
+            rowIndex1++;
+        });
+
+        // Insert student count data for this batch
         sheet1.getCell('AR2').value = studentData?.caste?.general?.total ?? 0;
         sheet1.getCell('AR3').value = studentData?.caste?.obc?.total ?? 0;
         sheet1.getCell('AR4').value = studentData?.caste?.st?.total ?? 0;
         sheet1.getCell('AR5').value = studentData?.caste?.sc?.total ?? 0;
         sheet1.getCell('AR6').value = studentData?.total ?? 0;
 
-        // Insert student count data for gender (into column AS)
         sheet1.getCell('AU4').value = studentData?.gender?.male?.total ?? 0;
         sheet1.getCell('AU5').value = studentData?.gender?.female?.total ?? 0;
         sheet1.getCell('AU6').value = studentData?.total ?? 0;
 
-        // After filling row 19, log the formula inserted
-        sheet1.getRow(rowIndex1).eachCell((cell, colNumber) => {
-        });
-
-        row.commit();
-        lastFilledRow1 = rowIndex1;
+        // Add spacing between batches
         rowIndex1++;
-    });
-
+    }
 
     // After filling the template, write to the file
     sheet1.getRow(18).hidden = true;
@@ -161,10 +188,7 @@ async function fillTemplate(valuesArray, studentData) {
     // sheet2.spliceRows(7, 1);
     // console.log(`Sheet 2: Deleted row 7.`);
 
-    sheet1.getRow(19).eachCell((cell, colNumber) => {
-    });
-
-    /** ✨ Force Excel to Recalculate Formulas on Open **/
+    //     /** ✨ Force Excel to Recalculate Formulas on Open **/
     workbook.calcProperties.calcMode = 'auto';
     workbook.calcProperties.fullCalcOnLoad = true;
     workbook.calcProperties.calcOnSave = true;
@@ -188,7 +212,7 @@ async function fillTemplate(valuesArray, studentData) {
 // Function to fetch marks from API
 async function getMarks() {
     const groupid = process.env.GROUP_ID;
-    const batchId = process.env.BATCH_ID;
+    const batchIds = process.env.BATCH_ID.split(','); // Split comma-separated batch IDs
     const _school = process.env.SCHOOL_ID;
     const RANKING_ID = process.env.RANKING_ID;
     const DIVISION_ID = process.env.DIVISION_ID;
@@ -198,7 +222,7 @@ async function getMarks() {
 
     const data = {
         "_school": _school,
-        "batchId": batchId,
+        "batchId": batchIds, // Pass array of batch IDs
         "group": group,
         "currentdata": {
             "division_id": DIVISION_ID,
@@ -211,6 +235,7 @@ async function getMarks() {
         return response.data.data;
     } catch (error) {
         console.error('Error making POST request:', error);
+        throw error;
     }
 }
 
@@ -219,9 +244,8 @@ async function main() {
     try {
         await downloadTemplate(templateUrl, localTemplatePath);
         const valuesArray = await getMarks();
-        const studentData = await getStudentCount();
-        // console.log('Filling the template with data...', valuesArray);
-        await fillTemplate(valuesArray, studentData);
+        const studentCounts = await getStudentCount();
+        await fillTemplate(valuesArray, studentCounts);
         console.log('Process completed successfully.');
     } catch (error) {
         console.error('Error during process:', error);
