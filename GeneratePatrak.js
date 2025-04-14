@@ -2,16 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
 const axios = require('axios');
-require('dotenv').config();
+require('dotenv').config(); // Load environment variables
 
 const localTemplatePath = path.resolve(__dirname, 'patrak.xlsx');
 const outputFolder = path.join(__dirname, 'output');
 const templateUrl = process.env.TEMPLATE_URL;
-
-// Ensure output folder exists
-if (!fs.existsSync(outputFolder)) {
-    fs.mkdirSync(outputFolder);
-}
 
 // Function to download the template file
 const downloadTemplate = async (url, outputPath) => {
@@ -26,10 +21,18 @@ const downloadTemplate = async (url, outputPath) => {
 };
 
 // Function to fetch student count data from API
-async function getStudentCount(batchId, _school) {
-    const payload = {
-        _school: _school,
-        batchId: batchId,
+async function getStudentCount() {
+
+    const batchId = process.env.BATCH_ID;
+    const _school = process.env.SCHOOL_ID;
+
+    if (!_school) {
+        throw new Error('SCHOOL_ID is not defined in the environment variables.');
+    }
+
+    const payload2 = {
+        "_school": _school,
+        "batchId": batchId
     };
 
     try {
@@ -39,41 +42,53 @@ async function getStudentCount(batchId, _school) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify(payload),
+            body: JSON.stringify(payload2),
         });
 
         if (!studentResponse.ok) {
-            throw new Error(`Failed to fetch student count data for batch ${batchId}.`);
+            throw new Error('Failed to fetch student count data.');
         }
 
         const studentData = await studentResponse.json();
-        console.log(`Student count for batch ${batchId}:`, studentData);
+        console.log("studentDataCount:==", studentData);
+
         return studentData.data;
     } catch (error) {
-        console.error(`Error fetching student count for batch ${batchId}:`, error);
-        return { caste: {}, gender: {}, total: 0 }; // Fallback data
+        console.error('Error fetching student count:', error);
+        throw error;
     }
 }
 
 
+// Function to fill both sheets with data
+async function fillTemplate(valuesArray, studentData) {
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(localTemplatePath);
 
-// Function to fill both sheets with data for a single batch
-async function fillTemplateForBatch(workbook, batchId, batchName, valuesArray, studentData, sheetOffset) {
-    const sheet1 = workbook.worksheets[0];
-    const headerRow1 = sheet1.getRow(18);
-    const headers1 = headerRow1.values.slice(1);
+    // ✨ Process First Sheet (Main Sheet)
+    const sheet1 = workbook.worksheets[0]; // First sheet
+    const headerRow1 = sheet1.getRow(18); // Header row
+    // const headers1 = headerRow1.values.slice(1).map(header => {
+    //     // Ensure headers are strings
+    //     return typeof header === 'string' ? header : (header.text || '');
+    // });
 
-    let rowIndex1 = 19 + sheetOffset; // Offset to avoid overwriting previous batch data
+    const headers1 = headerRow1?.values.slice(1);
+
+    let rowIndex1 = 19; // Start inserting from row 19
     let lastFilledRow1 = rowIndex1;
 
+    // Fill the row with data
     valuesArray.forEach((values) => {
         const row = sheet1.getRow(rowIndex1);
 
         headers1.forEach((header, colIndex) => {
-            const key = header.replace(/[{}]/g, '');
+            const key = header.replace(/[{}]/g, ''); // Clean header
 
             if (values.hasOwnProperty(key)) {
                 let cellValue = values[key];
+
+                // If value is a formula (e.g., "=K19/4"), store as formula
                 if (typeof cellValue === 'string' && cellValue.startsWith('=')) {
                     row.getCell(colIndex + 1).value = { formula: cellValue.substring(1) };
                 } else {
@@ -83,50 +98,32 @@ async function fillTemplateForBatch(workbook, batchId, batchName, valuesArray, s
                 row.getCell(colIndex + 1).value = null;
             }
         });
-
-        // Insert student count data for caste categories
+        // Insert student count data for caste categories (into column AO)
         sheet1.getCell('AR2').value = studentData?.caste?.general?.total ?? 0;
         sheet1.getCell('AR3').value = studentData?.caste?.obc?.total ?? 0;
         sheet1.getCell('AR4').value = studentData?.caste?.st?.total ?? 0;
         sheet1.getCell('AR5').value = studentData?.caste?.sc?.total ?? 0;
         sheet1.getCell('AR6').value = studentData?.total ?? 0;
 
-        // Insert student count data for gender
+        // Insert student count data for gender (into column AS)
         sheet1.getCell('AU4').value = studentData?.gender?.male?.total ?? 0;
         sheet1.getCell('AU5').value = studentData?.gender?.female?.total ?? 0;
         sheet1.getCell('AU6').value = studentData?.total ?? 0;
+
+        // After filling row 19, log the formula inserted
+        sheet1.getRow(rowIndex1).eachCell((cell, colNumber) => {
+        });
 
         row.commit();
         lastFilledRow1 = rowIndex1;
         rowIndex1++;
     });
 
-    return lastFilledRow1; // Return the last row filled for offset calculation
-}
 
-// Function to process multiple batches
-async function fillTemplate(valuesArrayByBatch, studentDataByBatch) {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(localTemplatePath);
-
-    let sheetOffset = 0;
-
-    for (const batch of valuesArrayByBatch) {
-        const lastRow = await fillTemplateForBatch(
-            workbook,
-            batch.batchId,
-            batch.batchName,
-            batch.data,
-            studentDataByBatch[batch.batchId],
-            sheetOffset
-        );
-        sheetOffset = lastRow - 18; // Update offset for next batch
-    }
-
-    const sheet1 = workbook.worksheets[0];
+    // After filling the template, write to the file
     sheet1.getRow(18).hidden = true;
-    sheet1.spliceRows(sheetOffset + 19, 100);
-    console.log(`Sheet 1: Deleted 100 rows starting from row ${sheetOffset + 19}.`);
+    sheet1.spliceRows(lastFilledRow1 + 1, 100);
+    console.log(`Sheet 1: Deleted 100 rows starting from row ${lastFilledRow1 + 1}.`);
 
     // /** ✨ Process Second Sheet **/
     // const sheet2 = workbook.worksheets[1]; // Second sheet
@@ -164,7 +161,10 @@ async function fillTemplate(valuesArrayByBatch, studentDataByBatch) {
     // sheet2.spliceRows(7, 1);
     // console.log(`Sheet 2: Deleted row 7.`);
 
-    //     /** ✨ Force Excel to Recalculate Formulas on Open **/
+    sheet1.getRow(19).eachCell((cell, colNumber) => {
+    });
+
+    /** ✨ Force Excel to Recalculate Formulas on Open **/
     workbook.calcProperties.calcMode = 'auto';
     workbook.calcProperties.fullCalcOnLoad = true;
     workbook.calcProperties.calcOnSave = true;
@@ -185,61 +185,43 @@ async function fillTemplate(valuesArrayByBatch, studentDataByBatch) {
     console.log(`Template filled and saved as "${updatedFilePath}".`);
 }
 
-// Main function to execute the process
 // Function to fetch marks from API
-async function getMarks(batchId, groupIds, _school, rankingId, divisionId, apiUrl) {
-    const group = groupIds.split(',');
+async function getMarks() {
+    const groupid = process.env.GROUP_ID;
+    const batchId = process.env.BATCH_ID;
+    const _school = process.env.SCHOOL_ID;
+    const RANKING_ID = process.env.RANKING_ID;
+    const DIVISION_ID = process.env.DIVISION_ID;
+    const API_URL = process.env.API_URL;
+    const group = groupid?.split(",");
+    const url = API_URL;
 
     const data = {
-        _school: _school,
-        batchId: batchId,
-        group: group,
-        currentdata: {
-            division_id: divisionId,
-            ranking_id: rankingId,
-        },
+        "_school": _school,
+        "batchId": batchId,
+        "group": group,
+        "currentdata": {
+            "division_id": DIVISION_ID,
+            "ranking_id": RANKING_ID
+        }
     };
 
     try {
-        const response = await axios.post(apiUrl, data);
-        console.log(`Marks fetched for batch ${batchId}`);
+        const response = await axios.post(url, data);
         return response.data.data;
     } catch (error) {
-        console.error(`Error fetching marks for batch ${batchId}:`, error);
-        return [];
+        console.error('Error making POST request:', error);
     }
 }
+
+// Main function to execute the process
 async function main() {
     try {
         await downloadTemplate(templateUrl, localTemplatePath);
-
-        const batchIds = process.env.BATCH_ID.split(',');
-        const groupIds = process.env.GROUP_ID;
-        const _school = process.env.SCHOOL_ID;
-        const rankingId = process.env.RANKING_ID;
-        const divisionId = process.env.DIVISION_ID;
-        const apiUrl = process.env.API_URL;
-
-        if (!batchIds || !_school || !groupIds || !apiUrl) {
-            throw new Error('Required environment variables are missing.');
-        }
-
-        const valuesArrayByBatch = [];
-        const studentDataByBatch = {};
-
-        // Fetch data for each batch sequentially
-        for (const batchId of batchIds) {
-            const marks = await getMarks(batchId, groupIds, _school, rankingId, divisionId, apiUrl);
-            const studentData = await getStudentCount(batchId, _school);
-            valuesArrayByBatch.push({
-                batchId,
-                batchName: `Batch_${batchId}`, // Replace with actual batch name if available
-                data: marks,
-            });
-            studentDataByBatch[batchId] = studentData;
-        }
-
-        await fillTemplate(valuesArrayByBatch, studentDataByBatch);
+        const valuesArray = await getMarks();
+        const studentData = await getStudentCount();
+        // console.log('Filling the template with data...', valuesArray);
+        await fillTemplate(valuesArray, studentData);
         console.log('Process completed successfully.');
     } catch (error) {
         console.error('Error during process:', error);
