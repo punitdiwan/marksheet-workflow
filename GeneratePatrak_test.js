@@ -25,6 +25,7 @@ async function getStudentCount() {
 
     const batchId = process.env.BATCH_ID;
     const _school = process.env.SCHOOL_ID;
+    const batch = batchId?.split(",");
 
     if (!_school) {
         throw new Error('SCHOOL_ID is not defined in the environment variables.');
@@ -32,7 +33,7 @@ async function getStudentCount() {
 
     const payload2 = {
         "_school": _school,
-        "batchId": batchId
+        "batchId": batch
     };
 
     try {
