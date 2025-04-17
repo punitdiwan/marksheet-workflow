@@ -1,0 +1,75 @@
+name: Generate Patrak
+on:
+  workflow_dispatch:
+    inputs:
+      SCHOOL_ID:
+        description: School ID
+        required: true
+      BATCH_ID:
+        description: Batch ID
+        required: true
+      RANKING_ID:
+        description: Ranking ID
+      DIVISION_ID:
+        description: Division ID
+      JOB_ID:
+        description: JOB ID
+      API_URL:
+        description: API URL
+        required: true
+      JOB_URL:
+        description: JOB_URL
+        required: true
+      TEMPLATE_URL:
+        description: TEMPLATE URL
+        required: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install DO Space
+        run: npm install -g spaces-cli
+
+      - name: Set environment variables from inputs
+        run: |
+          SCHOOL_ID="${{ github.event.inputs.SCHOOL_ID }}"
+          BATCH_ID="${{ github.event.inputs.BATCH_ID }}"
+          RANKING_ID="${{ github.event.inputs.RANKING_ID }}"
+          DIVISION_ID="${{ github.event.inputs.DIVISION_ID }}"
+          API_URL="${{ github.event.inputs.API_URL }}"
+          TEMPLATE_URL="${{ github.event.inputs.TEMPLATE_URL }}"
+          JOB_ID="${{ github.event.inputs.JOB_ID }}"
+          JOB_URL="${{ github.event.inputs.JOB_URL }}"
+
+          echo "SCHOOL_ID=$SCHOOL_ID" >> $GITHUB_ENV
+          echo "BATCH_ID=$BATCH_ID" >> $GITHUB_ENV
+          echo "RANKING_ID=$RANKING_ID" >> $GITHUB_ENV
+          echo "DIVISION_ID=$DIVISION_ID" >> $GITHUB_ENV
+          echo "API_URL=$API_URL" >> $GITHUB_ENV
+          echo "TEMPLATE_URL=$TEMPLATE_URL" >> $GITHUB_ENV
+          echo "JOB_ID=$JOB_ID" >> $GITHUB_ENV
+          echo "JOB_URL=$JOB_URL" >> $GITHUB_ENV
+      - name: Install dependencies
+        run: |
+          npm install
+      - name: Create output directory
+        run: mkdir -p output
+      - name: Run GeneratePatrak_test.js
+        run: |
+          node GeneratePatrak_test.js
+      - name: Run Upload_Patrak.js
+        run: |
+          node Upload_Patrak.js
+
+      - name: upload a file
+        run: |
+          cd output
+          spaces-cli up -s schoolerp-bucket -r blr1 -i ${{ secrets.DO_ACCESS_KEY_ID }} -k ${{ secrets.DO_SECRET_ACCESS_KEY }} -t templates/marksheets/${{ github.event.inputs.SCHOOL_ID }}/patrak/"${{ github.event.inputs.BATCH_ID }}_${{ github.event.inputs.JOB_ID }}.xlsx" filled-patrak.xlsx
