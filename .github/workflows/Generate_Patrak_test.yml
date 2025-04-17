@@ -70,11 +70,11 @@ jobs:
       - name: Run GeneratePatrak_test.js
         run: |
           node GeneratePatrak_test.js
-      - name: Run Upload_Patrak.js
+      - name: Run Upload_Patrak_test.js
         run: |
-          node Upload_Patrak.js
+          node Upload_Patrak_test.js
 
       - name: upload a file
         run: |
           cd output
-          spaces-cli up -s schoolerp-bucket -r blr1 -i ${{ secrets.DO_ACCESS_KEY_ID }} -k ${{ secrets.DO_SECRET_ACCESS_KEY }} -t templates/marksheets/${{ github.event.inputs.SCHOOL_ID }}/patrak/"${{ github.event.inputs.BATCH_ID }}_${{ github.event.inputs.JOB_ID }}.xlsx" filled-patrak.xlsx
+          spaces-cli up -s schoolerp-bucket -r blr1 -i ${{ secrets.DO_ACCESS_KEY_ID }} -k ${{ secrets.DO_SECRET_ACCESS_KEY }} -t templates/marksheets/${{ github.event.inputs.SCHOOL_ID }}/patrak/"${{ github.event.inputs.JOB_ID }}.xlsx" filled-patrak.xlsx
