@@ -1,4 +1,4 @@
-name: Generate Patrak
+name: Generate Patrak test
 on:
   workflow_dispatch:
     inputs:
