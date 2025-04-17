@@ -25,9 +25,6 @@ async function getStudentCount() {
 
     const batchId = process.env.BATCH_ID;
     const _school = process.env.SCHOOL_ID;
-    const batch = await JSON.parse(batchId);
-    console.log("const batchId", batch[0].examGroupData);
-    const result = [...new Set(batch.map(item => item._uid))];
 
     if (!_school) {
         throw new Error('SCHOOL_ID is not defined in the environment variables.');
@@ -35,11 +32,11 @@ async function getStudentCount() {
 
     const payload2 = {
         "_school": _school,
-        "batchId": result
+        "batchId": batchId
     };
 
     try {
-        const fullUrl = `http://localhost:3000/api/cce_examv1/studentCount`;
+        const fullUrl = `https://${_school}.edusparsh.com/api/cce_examv1/studentCount`;
         const studentResponse = await fetch(fullUrl, {
             method: 'POST',
             headers: {
@@ -64,7 +61,7 @@ async function getStudentCount() {
 
 
 // Function to fill both sheets with data
-async function fillTemplate(valuesArray) {
+async function fillTemplate(valuesArray, studentData) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(localTemplatePath);
 
@@ -102,16 +99,16 @@ async function fillTemplate(valuesArray) {
             }
         });
         // Insert student count data for caste categories (into column AO)
-        // sheet1.getCell('AR2').value = studentData?.caste?.general?.total ?? 0;
-        // sheet1.getCell('AR3').value = studentData?.caste?.obc?.total ?? 0;
-        // sheet1.getCell('AR4').value = studentData?.caste?.st?.total ?? 0;
-        // sheet1.getCell('AR5').value = studentData?.caste?.sc?.total ?? 0;
-        // sheet1.getCell('AR6').value = studentData?.total ?? 0;
+        sheet1.getCell('AR2').value = studentData?.caste?.general?.total ?? 0;
+        sheet1.getCell('AR3').value = studentData?.caste?.obc?.total ?? 0;
+        sheet1.getCell('AR4').value = studentData?.caste?.st?.total ?? 0;
+        sheet1.getCell('AR5').value = studentData?.caste?.sc?.total ?? 0;
+        sheet1.getCell('AR6').value = studentData?.total ?? 0;
 
-        // // Insert student count data for gender (into column AS)
-        // sheet1.getCell('AU4').value = studentData?.gender?.male?.total ?? 0;
-        // sheet1.getCell('AU5').value = studentData?.gender?.female?.total ?? 0;
-        // sheet1.getCell('AU6').value = studentData?.total ?? 0;
+        // Insert student count data for gender (into column AS)
+        sheet1.getCell('AU4').value = studentData?.gender?.male?.total ?? 0;
+        sheet1.getCell('AU5').value = studentData?.gender?.female?.total ?? 0;
+        sheet1.getCell('AU6').value = studentData?.total ?? 0;
 
         // After filling row 19, log the formula inserted
         sheet1.getRow(rowIndex1).eachCell((cell, colNumber) => {
@@ -190,68 +187,28 @@ async function fillTemplate(valuesArray) {
 
 // Function to fetch marks from API
 async function getMarks() {
+    const groupid = process.env.GROUP_ID;
     const batchId = process.env.BATCH_ID;
     const _school = process.env.SCHOOL_ID;
     const RANKING_ID = process.env.RANKING_ID;
     const DIVISION_ID = process.env.DIVISION_ID;
     const API_URL = process.env.API_URL;
+    const group = groupid?.split(",");
     const url = API_URL;
 
-    const batch = await JSON.parse(batchId);
-
-    const responsedata = []
+    const data = {
+        "_school": _school,
+        "batchId": batchId,
+        "group": group,
+        "currentdata": {
+            "division_id": DIVISION_ID,
+            "ranking_id": RANKING_ID
+        }
+    };
 
     try {
-        // const getdata = batch?.map(async (item) => {
-        //     const result = [...new Set(item?.examGroupData.map(item => item._uid))];
-        //     console.log(result);
-        //     const data = {
-        //         "_school": _school,
-        //         "batchId": item?._uid,
-        //         "group": result,
-        //         "currentdata": {
-        //             "division_id": DIVISION_ID,
-        //             "ranking_id": RANKING_ID
-        //         }
-
-        //     }
-        //     console.log("data", data)
-        //     // const response = await axios.post(url, data);
-
-        //     const response = await fetch(url, {
-        //         method: 'POST',
-        //         headers: {
-        //             'Content-Type': 'application/json',
-        //         },
-        //         body: JSON.stringify(data),
-        //     });
-        //     console.log("datresponsea", response?.data?.data)
-        //     // responsedata.push(response.data.data);
-        // })
-        // await Promise.all(getdata);
-        // return responsedata.flat();
-        const allResponses = await Promise.all(
-            batch?.map(async (item) => {
-                const group = [...new Set(item?.examGroupData.map(g => g._uid))];
-                const data = {
-                    _school,
-                    batchId: item?._uid,
-                    group,
-                    currentdata: {
-                        division_id: DIVISION_ID,
-                        ranking_id: RANKING_ID
-                    }
-                };
-
-                const response = await axios.post(url, data);
-                return response?.data?.data || []; // Ensure it's always an array
-            })
-        );
-
-        // Flatten all arrays into one
-        return allResponses.flat();
-
-
+        const response = await axios.post(url, data);
+        return response.data.data;
     } catch (error) {
         console.error('Error making POST request:', error);
     }
@@ -262,11 +219,9 @@ async function main() {
     try {
         await downloadTemplate(templateUrl, localTemplatePath);
         const valuesArray = await getMarks();
-        console.log("valuesArray", valuesArray?.length);
-
-        // const studentData = await getStudentCount();
+        const studentData = await getStudentCount();
         // console.log('Filling the template with data...', valuesArray);
-        await fillTemplate(valuesArray);
+        await fillTemplate(valuesArray, studentData);
         console.log('Process completed successfully.');
     } catch (error) {
         console.error('Error during process:', error);

@@ -1,4 +1,4 @@
-name: Generate Patrak Test
+name: Generate Patrak
 on:
   workflow_dispatch:
     inputs:
@@ -7,6 +7,9 @@ on:
         required: true
       BATCH_ID:
         description: Batch ID
+        required: true
+      GROUP_ID:
+        description: Group ID (comma-separated)
         required: true
       RANKING_ID:
         description: Ranking ID
@@ -42,6 +45,7 @@ jobs:
         run: |
           SCHOOL_ID="${{ github.event.inputs.SCHOOL_ID }}"
           BATCH_ID="${{ github.event.inputs.BATCH_ID }}"
+          GROUP_ID="${{ github.event.inputs.GROUP_ID }}"
           RANKING_ID="${{ github.event.inputs.RANKING_ID }}"
           DIVISION_ID="${{ github.event.inputs.DIVISION_ID }}"
           API_URL="${{ github.event.inputs.API_URL }}"
@@ -51,6 +55,7 @@ jobs:
 
           echo "SCHOOL_ID=$SCHOOL_ID" >> $GITHUB_ENV
           echo "BATCH_ID=$BATCH_ID" >> $GITHUB_ENV
+          echo "GROUP_ID=$GROUP_ID" >> $GITHUB_ENV
           echo "RANKING_ID=$RANKING_ID" >> $GITHUB_ENV
           echo "DIVISION_ID=$DIVISION_ID" >> $GITHUB_ENV
           echo "API_URL=$API_URL" >> $GITHUB_ENV
