@@ -194,11 +194,12 @@ async function getMarks() {
     const DIVISION_ID = process.env.DIVISION_ID;
     const API_URL = process.env.API_URL;
     const group = groupid?.split(",");
+    const batch = batchId?.split(",");
     const url = API_URL;
 
     const data = {
         "_school": _school,
-        "batchId": batchId,
+        "batchId": batch,
         "group": group,
         "currentdata": {
             "division_id": DIVISION_ID,
@@ -219,6 +220,8 @@ async function main() {
     try {
         await downloadTemplate(templateUrl, localTemplatePath);
         const valuesArray = await getMarks();
+        console.log("valuesArray", valuesArray.length);
+
         const studentData = await getStudentCount();
         // console.log('Filling the template with data...', valuesArray);
         await fillTemplate(valuesArray, studentData);
