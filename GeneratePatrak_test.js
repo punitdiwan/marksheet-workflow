@@ -122,7 +122,7 @@ async function fillTemplate(valuesArray, studentData) {
 
 
     // After filling the template, write to the file
-    sheet1.getRow(18).hidden = true;
+    // sheet1.getRow(18).hidden = true;
     sheet1.spliceRows(lastFilledRow1 + 1, 100);
     console.log(`Sheet 1: Deleted 100 rows starting from row ${lastFilledRow1 + 1}.`);
 
