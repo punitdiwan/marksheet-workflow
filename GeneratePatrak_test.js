@@ -68,7 +68,7 @@ async function fillTemplate(valuesArray, studentData) {
 
     // ✨ Process First Sheet (Main Sheet)
     const sheet1 = workbook.worksheets[0]; // First sheet
-    const headerRow1 = sheet1.getRow(18); // Header row
+    const headerRow1 = sheet1.getRow(22); // Header row
     // const headers1 = headerRow1.values.slice(1).map(header => {
     //     // Ensure headers are strings
     //     return typeof header === 'string' ? header : (header.text || '');
@@ -76,7 +76,7 @@ async function fillTemplate(valuesArray, studentData) {
 
     const headers1 = headerRow1?.values.slice(1);
 
-    let rowIndex1 = 19; // Start inserting from row 19
+    let rowIndex1 = 23; // Start inserting from row 19
     let lastFilledRow1 = rowIndex1;
 
     // Fill the row with data
@@ -122,7 +122,7 @@ async function fillTemplate(valuesArray, studentData) {
 
 
     // After filling the template, write to the file
-    // sheet1.getRow(18).hidden = true;
+    sheet1.getRow(22).hidden = true;
     sheet1.spliceRows(lastFilledRow1 + 1, 100);
     console.log(`Sheet 1: Deleted 100 rows starting from row ${lastFilledRow1 + 1}.`);
 
@@ -162,7 +162,7 @@ async function fillTemplate(valuesArray, studentData) {
     // sheet2.spliceRows(7, 1);
     // console.log(`Sheet 2: Deleted row 7.`);
 
-    sheet1.getRow(19).eachCell((cell, colNumber) => {
+    sheet1.getRow(23).eachCell((cell, colNumber) => {
     });
 
     /** ✨ Force Excel to Recalculate Formulas on Open **/
@@ -172,7 +172,7 @@ async function fillTemplate(valuesArray, studentData) {
 
 
     sheet1.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-        if (rowNumber >= 19) {
+        if (rowNumber >= 23) {
             row.eachCell((cell) => {
                 if (cell.formula) {
                     cell.value = { formula: cell.formula, result: null };
