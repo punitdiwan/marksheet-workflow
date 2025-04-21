@@ -22,7 +22,6 @@ const downloadTemplate = async (url, outputPath) => {
 
 // Function to fetch student count data from API
 async function getStudentCount() {
-
     const batchId = process.env.BATCH_ID;
     const _school = process.env.SCHOOL_ID;
     const batch = batchId?.split(",");
@@ -60,69 +59,68 @@ async function getStudentCount() {
     }
 }
 
-
-// Function to fill both sheets with data
+// Function to fill template
 async function fillTemplate(valuesArray, studentData) {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(localTemplatePath);
 
-    // ✨ Process First Sheet (Main Sheet)
-    const sheet1 = workbook.worksheets[0]; // First sheet
-    const headerRow1 = sheet1.getRow(18); // Header row
+    const batchId = process.env.BATCH_ID;
+
+    // Define special batch IDs
+    const specialBatches = ['xzX2QnGik4Si', '9BrwgPLU51To'];
+    const isSpecialBatch = specialBatches.includes(batchId);
+
+    // Dynamic row configuration
+    const headerRowIndex = isSpecialBatch ? 22 : 18;
+    let rowIndex1 = isSpecialBatch ? 23 : 19;
+
+    const sheet1 = workbook.worksheets[0];
+    const headerRow1 = sheet1.getRow(headerRowIndex);
     // const headers1 = headerRow1.values.slice(1).map(header => {
     //     // Ensure headers are strings
     //     return typeof header === 'string' ? header : (header.text || '');
     // });
-
     const headers1 = headerRow1?.values.slice(1);
 
-    let rowIndex1 = 19; // Start inserting from row 19
     let lastFilledRow1 = rowIndex1;
 
-    // Fill the row with data
     valuesArray.forEach((values) => {
         const row = sheet1.getRow(rowIndex1);
 
         headers1.forEach((header, colIndex) => {
-            const key = header.replace(/[{}]/g, ''); // Clean header
+            const key = header.replace(/[{}]/g, '');
 
             if (values.hasOwnProperty(key)) {
-                let cellValue = values[key];
-
-                // If value is a formula (e.g., "=K19/4"), store as formula
-                if (typeof cellValue === 'string' && cellValue.startsWith('=')) {
-                    row.getCell(colIndex + 1).value = { formula: cellValue.substring(1) };
-                } else {
-                    row.getCell(colIndex + 1).value = cellValue ?? null;
-                }
+                const cellValue = values[key];
+                row.getCell(colIndex + 1).value =
+                    typeof cellValue === 'string' && cellValue.startsWith('=')
+                        ? { formula: cellValue.substring(1) }
+                        : cellValue ?? null;
             } else {
                 row.getCell(colIndex + 1).value = null;
             }
         });
-        // Insert student count data for caste categories (into column AO)
+
+        // Student count data
         sheet1.getCell('AR2').value = studentData?.caste?.general?.total ?? 0;
         sheet1.getCell('AR3').value = studentData?.caste?.obc?.total ?? 0;
         sheet1.getCell('AR4').value = studentData?.caste?.st?.total ?? 0;
         sheet1.getCell('AR5').value = studentData?.caste?.sc?.total ?? 0;
         sheet1.getCell('AR6').value = studentData?.total ?? 0;
 
-        // Insert student count data for gender (into column AS)
         sheet1.getCell('AU4').value = studentData?.gender?.male?.total ?? 0;
         sheet1.getCell('AU5').value = studentData?.gender?.female?.total ?? 0;
         sheet1.getCell('AU6').value = studentData?.total ?? 0;
-
-        // After filling row 19, log the formula inserted
-        sheet1.getRow(rowIndex1).eachCell((cell, colNumber) => {
-        });
 
         row.commit();
         lastFilledRow1 = rowIndex1;
         rowIndex1++;
     });
 
+    // Hide header row
+    sheet1.getRow(headerRowIndex).hidden = true;
 
-    // After filling the template, write to the file
-    sheet1.getRow(18).hidden = true;
+    // Remove unused rows
     sheet1.spliceRows(lastFilledRow1 + 1, 100);
     console.log(`Sheet 1: Deleted 100 rows starting from row ${lastFilledRow1 + 1}.`);
 
@@ -161,18 +159,18 @@ async function fillTemplate(valuesArray, studentData) {
     // // Delete row 7 (headers) after inserting data
     // sheet2.spliceRows(7, 1);
     // console.log(`Sheet 2: Deleted row 7.`);
-
-    sheet1.getRow(19).eachCell((cell, colNumber) => {
+    // Optional debug output
+    sheet1.getRow(isSpecialBatch ? 23 : 19).eachCell((cell, colNumber) => {
+        // console.log(`Cell ${colNumber}:`, cell.value);
     });
 
-    /** ✨ Force Excel to Recalculate Formulas on Open **/
+    // Recalculate formulas
     workbook.calcProperties.calcMode = 'auto';
     workbook.calcProperties.fullCalcOnLoad = true;
     workbook.calcProperties.calcOnSave = true;
 
-
     sheet1.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-        if (rowNumber >= 19) {
+        if (rowNumber >= (isSpecialBatch ? 23 : 19)) {
             row.eachCell((cell) => {
                 if (cell.formula) {
                     cell.value = { formula: cell.formula, result: null };
@@ -186,7 +184,7 @@ async function fillTemplate(valuesArray, studentData) {
     console.log(`Template filled and saved as "${updatedFilePath}".`);
 }
 
-// Function to fetch marks from API
+// Function to fetch marks
 async function getMarks() {
     const groupid = process.env.GROUP_ID;
     const batchId = process.env.BATCH_ID;
@@ -216,7 +214,7 @@ async function getMarks() {
     }
 }
 
-// Main function to execute the process
+// Main function
 async function main() {
     try {
         await downloadTemplate(templateUrl, localTemplatePath);
@@ -224,7 +222,6 @@ async function main() {
         console.log("valuesArray", valuesArray.length);
 
         const studentData = await getStudentCount();
-        // console.log('Filling the template with data...', valuesArray);
         await fillTemplate(valuesArray, studentData);
         console.log('Process completed successfully.');
     } catch (error) {
