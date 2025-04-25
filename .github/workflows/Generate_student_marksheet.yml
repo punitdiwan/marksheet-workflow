@@ -26,11 +26,8 @@ on:
       TEMPLATE_URL:
         description: TEMPLATE URL
         required: true
-      GENERATE_PDF:
-        description: Generate PDF
-        required: true
       STUDENT_ID:
-        description: Student Id
+        description: Student Id (comma-separated)
         required: true
 jobs:
   build:
@@ -58,7 +55,6 @@ jobs:
           TEMPLATE_URL="${{ github.event.inputs.TEMPLATE_URL }}"
           JOB_ID="${{ github.event.inputs.JOB_ID }}"
           JOB_URL="${{ github.event.inputs.JOB_URL }}"
-          GENERATE_PDF="${{ github.event.inputs.GENERATE_PDF }}"
           STUDENT_ID="${{ github.event.inputs.STUDENT_ID }}"
 
           echo "SCHOOL_ID=$SCHOOL_ID" >> $GITHUB_ENV
@@ -70,7 +66,6 @@ jobs:
           echo "TEMPLATE_URL=$TEMPLATE_URL" >> $GITHUB_ENV
           echo "JOB_ID=$JOB_ID" >> $GITHUB_ENV
           echo "JOB_URL=$JOB_URL" >> $GITHUB_ENV
-          echo "GENERATE_PDF=$GENERATE_PDF" >> $GITHUB_ENV
           echo "STUDENT_ID=$STUDENT_ID" >> $GITHUB_ENV
           
       - name: Install dependencies
@@ -87,23 +82,13 @@ jobs:
       - name: Conditionally run generate_pdf.js or zip files
         run: |
           cd output
-          if [ "${{ env.GENERATE_PDF }}" == "true" ]; then
-            node generate_pdf.js
-          else
-            zip -r archive_name.zip *.docx
-          fi
+          node generate_pdf.js
       - name: Go to output folder and run marge_2pdf.js
         run: |
           cd output
-          node merge_2pdf.js
+          node merge_pdf.js
 
       - name: Upload a file
         run: |
           cd output
-          if [ "${{ env.GENERATE_PDF }}" == "true" ]; then
-            # Upload the PDF file
-            spaces-cli up -s schoolerp-bucket -r blr1 -i ${{ secrets.DO_ACCESS_KEY_ID }} -k ${{ secrets.DO_SECRET_ACCESS_KEY }} -t templates/marksheets/${{ github.event.inputs.SCHOOL_ID }}/result/"${{ github.event.inputs.BATCH_ID }}_${{ github.event.inputs.JOB_ID }}.pdf" merged.pdf
-          else
-            # Upload the .zip file
-            spaces-cli up -s schoolerp-bucket -r blr1 -i ${{ secrets.DO_ACCESS_KEY_ID }} -k ${{ secrets.DO_SECRET_ACCESS_KEY }} -t templates/marksheets/${{ github.event.inputs.SCHOOL_ID }}/result/"${{ github.event.inputs.BATCH_ID }}_${{ github.event.inputs.JOB_ID }}.zip" archive_name.zip
-          fi
+          spaces-cli up -s schoolerp-bucket -r blr1 -i ${{ secrets.DO_ACCESS_KEY_ID }} -k ${{ secrets.DO_SECRET_ACCESS_KEY }} -t templates/marksheets/${{ github.event.inputs.SCHOOL_ID }}/result/"${{ github.event.inputs.BATCH_ID }}_${{ github.event.inputs.JOB_ID }}.pdf" merged.pdf
