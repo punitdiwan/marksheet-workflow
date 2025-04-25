@@ -1,4 +1,4 @@
-name: Generate Marksheet Student Wise
+name: Generate Marksheet Student
 on:
   workflow_dispatch:
     inputs:
