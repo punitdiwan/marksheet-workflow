@@ -88,7 +88,7 @@ async function fillTemplate(valuesArray, studentData) {
         const row = sheet1.getRow(rowIndex1);
 
         headers1.forEach((header, colIndex) => {
-            const key = header.replace(/[{}]/g, '');
+            const key = header?.replace(/[{}]/g, '');
 
             if (values.hasOwnProperty(key)) {
                 const cellValue = values[key];
