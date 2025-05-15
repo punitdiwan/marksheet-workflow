@@ -219,7 +219,7 @@ async function main() {
     try {
         await downloadTemplate(templateUrl, localTemplatePath);
         const valuesArray = await getMarks();
-        console.log("valuesArray", valuesArray.length);
+        console.log("valuesArray", valuesArray?.length);
 
         const studentData = await getStudentCount();
         await fillTemplate(valuesArray, studentData);
