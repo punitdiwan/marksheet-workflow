@@ -80,7 +80,21 @@ async function fillTemplate(valuesArray, studentData) {
     //     // Ensure headers are strings
     //     return typeof header === 'string' ? header : (header.text || '');
     // });
-    const headers1 = headerRow1?.values.slice(1);
+
+    // new comment
+    // const headers1 = headerRow1?.values.slice(1);
+
+    const headers1 = headerRow1?.values.slice(1).map(header => {
+        if (typeof header === 'string') return header;
+        if (typeof header === 'object' && header !== null) {
+            if (header.text) return header.text;
+            if (header.richText && Array.isArray(header.richText)) {
+                return header.richText.map(rt => rt.text).join('');
+            }
+        }
+        return '';
+    });
+
 
     let lastFilledRow1 = rowIndex1;
 
