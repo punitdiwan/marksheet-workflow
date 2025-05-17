@@ -67,7 +67,7 @@ async function fillTemplate(valuesArray, studentData) {
     const batchId = process.env.BATCH_ID;
 
     // Define special batch IDs
-    const specialBatches = ['xzX2QnGik4Si', '9BrwgPLU51To', '6QmAf9yPjVA1', 'rVJRWux53NBz'];
+    const specialBatches = ['xzX2QnGik4Si', '9BrwgPLU51To'];
     const isSpecialBatch = specialBatches.includes(batchId);
 
     // Dynamic row configuration
@@ -82,18 +82,18 @@ async function fillTemplate(valuesArray, studentData) {
     // });
 
     // new comment
-    // const headers1 = headerRow1?.values.slice(1);
+    const headers1 = headerRow1?.values.slice(1);
 
-    const headers1 = headerRow1?.values.slice(1).map(header => {
-        if (typeof header === 'string') return header;
-        if (typeof header === 'object' && header !== null) {
-            if (header.text) return header.text;
-            if (header.richText && Array.isArray(header.richText)) {
-                return header.richText.map(rt => rt.text).join('');
-            }
-        }
-        return '';
-    });
+    // const headers1 = headerRow1?.values.slice(1).map(header => {
+    //     if (typeof header === 'string') return header;
+    //     if (typeof header === 'object' && header !== null) {
+    //         if (header.text) return header.text;
+    //         if (header.richText && Array.isArray(header.richText)) {
+    //             return header.richText.map(rt => rt.text).join('');
+    //         }
+    //     }
+    //     return '';
+    // });
 
 
     let lastFilledRow1 = rowIndex1;
