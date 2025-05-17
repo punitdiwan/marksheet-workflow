@@ -135,7 +135,7 @@ async function fillTemplate(valuesArray, studentData) {
     sheet1.getRow(headerRowIndex).hidden = true;
 
     // Remove unused rows
-    sheet1.spliceRows(lastFilledRow1 + 1, 100);
+    // sheet1.spliceRows(lastFilledRow1 + 1, 100);
     console.log(`Sheet 1: Deleted 100 rows starting from row ${lastFilledRow1 + 1}.`);
 
     // /** ✨ Process Second Sheet **/
@@ -234,6 +234,8 @@ async function main() {
         await downloadTemplate(templateUrl, localTemplatePath);
         const valuesArray = await getMarks();
         console.log("valuesArray", valuesArray?.length);
+        console.log("valuesArray", valuesArray);
+
 
         const studentData = await getStudentCount();
         await fillTemplate(valuesArray, studentData);
