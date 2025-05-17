@@ -71,8 +71,8 @@ async function fillTemplate(valuesArray, studentData) {
     const isSpecialBatch = specialBatches.includes(batchId);
 
     // Dynamic row configuration
-    const headerRowIndex = isSpecialBatch ? 22 : 22; // :18
-    let rowIndex1 = isSpecialBatch ? 23 : 23; // :19
+    const headerRowIndex = isSpecialBatch ? 22 : 18; // :18
+    let rowIndex1 = isSpecialBatch ? 23 : 19; // :19
 
     const sheet1 = workbook.worksheets[0];
     const headerRow1 = sheet1.getRow(headerRowIndex);
