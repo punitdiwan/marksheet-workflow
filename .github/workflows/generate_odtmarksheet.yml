@@ -1,0 +1,81 @@
+name: Generate Marksheet
+on:
+  workflow_dispatch:
+    inputs:
+      SCHOOL_ID:
+        description: School ID
+        required: true
+      BATCH_ID:
+        description: Batch ID
+        required: true
+      GROUP_ID:
+        description: Group ID (comma-separated)
+        required: true
+      RANKING_ID:
+        description: Ranking ID
+      DIVISION_ID:
+        description: Division ID
+      JOB_ID:
+        description: JOB ID
+      API_URL:
+        description: API URL
+        required: true
+      COURSE_ID:
+        description: COURSE ID
+        required: true
+      TEMPLATE_URL:
+        description: TEMPLATE URL
+        required: true
+      GENERATE_PDF:
+        description: Generate PDF
+        required: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install DO Space
+        run: npm install -g spaces-cli
+
+      - name: Set environment variables from inputs
+        run: |
+          SCHOOL_ID="${{ github.event.inputs.SCHOOL_ID }}"
+          BATCH_ID="${{ github.event.inputs.BATCH_ID }}"
+          GROUP_ID="${{ github.event.inputs.GROUP_ID }}"
+          RANKING_ID="${{ github.event.inputs.RANKING_ID }}"
+          DIVISION_ID="${{ github.event.inputs.DIVISION_ID }}"
+          API_URL="${{ github.event.inputs.API_URL }}"
+          TEMPLATE_URL="${{ github.event.inputs.TEMPLATE_URL }}"
+          JOB_ID="${{ github.event.inputs.JOB_ID }}"
+          COURSE_ID="${{ github.event.inputs.COURSE_ID }}"
+          GENERATE_PDF="${{ github.event.inputs.GENERATE_PDF }}"
+
+          echo "SCHOOL_ID=$SCHOOL_ID" >> $GITHUB_ENV
+          echo "BATCH_ID=$BATCH_ID" >> $GITHUB_ENV
+          echo "GROUP_ID=$GROUP_ID" >> $GITHUB_ENV
+          echo "RANKING_ID=$RANKING_ID" >> $GITHUB_ENV
+          echo "DIVISION_ID=$DIVISION_ID" >> $GITHUB_ENV
+          echo "API_URL=$API_URL" >> $GITHUB_ENV
+          echo "TEMPLATE_URL=$TEMPLATE_URL" >> $GITHUB_ENV
+          echo "JOB_ID=$JOB_ID" >> $GITHUB_ENV
+          echo "COURSE_ID=$COURSE_ID" >> $GITHUB_ENV
+          echo "GENERATE_PDF=$GENERATE_PDF" >> $GITHUB_ENV
+      - name: Install dependencies
+        run: |
+          npm install
+      - name: Install LibreOffice
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libreoffice      
+      - name: Create output directory
+        run: mkdir -p output
+      - name: Run GenerateOdtMarksheet.js
+        run: |
+          node GenerateOdtMarksheet.js
