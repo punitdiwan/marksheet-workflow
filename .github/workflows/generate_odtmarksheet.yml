@@ -1,4 +1,4 @@
-name: Generate Marksheet
+name: Generate ODTMarksheet 
 on:
   workflow_dispatch:
     inputs:
