@@ -73,7 +73,12 @@ jobs:
       - name: Install LibreOffice
         run: |
           sudo apt-get update
-          sudo apt-get install -y libreoffice      
+          sudo apt-get install -y libreoffice   
+          
+      - name: Install PDFtk
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pdftk   
       - name: Create output directory
         run: mkdir -p output
       - name: Run GenerateOdtMarksheet.js
