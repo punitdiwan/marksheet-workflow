@@ -67,7 +67,7 @@ async function fillTemplate(valuesArray, studentData) {
     const batchId = process.env.BATCH_ID;
 
     // Define special batch IDs
-    const specialBatches = ['xzX2QnGik4Si', '9BrwgPLU51To'];
+    const specialBatches = ['xzX2QnGik4Si', '9BrwgPLU51To', 'Fwdn0iYR6fWP'];
     const isSpecialBatch = specialBatches.includes(batchId);
 
     // Dynamic row configuration
