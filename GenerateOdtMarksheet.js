@@ -50,34 +50,48 @@ async function GenerateOdtFile() {
         }
 
         const mappingJson = await mappingResponse.json();
-        // const keyMap = mappingJson.mappings || mappingJson.data || {};
-
         let keyMapRaw = mappingJson.mappings || mappingJson.data || [];
 
-        if (!Array.isArray(keyMapRaw) || keyMapRaw.length === 0 || !keyMapRaw[0].mappings) {
+        if (!Array.isArray(keyMapRaw) || keyMapRaw.length === 0) {
             throw new Error('Mapping format from API is invalid or empty');
         }
 
+        // Select mapping entry with courseId + batchId match, or fall back to courseId only
+        let selectedMappingEntry = keyMapRaw.find(entry =>
+            entry.course_id == courseId &&
+            Array.isArray(entry.batches) &&
+            entry.batches.includes(batchId)
+        );
+
+        if (!selectedMappingEntry) {
+            selectedMappingEntry = keyMapRaw.find(entry =>
+                entry.course_id == courseId &&
+                (!entry.batches || entry.batches.length === 0)
+            );
+        }
+
+        if (!selectedMappingEntry || !selectedMappingEntry.mappings) {
+            throw new Error('No suitable mapping entry found for given course and batch');
+        }
+
+        let rawMappingStr = selectedMappingEntry.mappings;
+        console.log("Selected raw mapping string:", rawMappingStr);
+
+        rawMappingStr = rawMappingStr
+            .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":') // keys
+            .replace(/:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=[,}])/g, ':"$1"'); // unquoted values
+
         let keyMap;
         try {
-            let rawMappingStr = keyMapRaw[0].mappings;
-            console.log("rawMappingStr", rawMappingStr);
-
-
-            // Add quotes around unquoted keys and unquoted string values
-            rawMappingStr = rawMappingStr
-                .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":') // keys
-                .replace(/:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=[,}])/g, ':"$1"'); // unquoted values
-
             keyMap = JSON.parse(rawMappingStr);
         } catch (err) {
-            console.error("⚠️ Raw mapping string that failed:", keyMapRaw[0].mappings);
+            console.error("⚠️ Failed to parse mappings JSON:", rawMappingStr);
             throw new Error('Failed to parse mappings JSON string from API');
         }
 
 
         // Step 2: Prepare directories and file lists
-        outputDir = path.join('/tmp', `output_${Date.now()}`); // Unique directory in /tmp
+        outputDir = path.join('/tmp', `output_${Date.now()}`);
         await fs.promises.mkdir(outputDir, { recursive: true });
 
         const pdfPaths = [];
@@ -85,7 +99,6 @@ async function GenerateOdtFile() {
         const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
 
         // Step 3: Fetch student data
-
         const marksPayload = {
             _school: _school,
             batchId: [batchId],
@@ -118,7 +131,7 @@ async function GenerateOdtFile() {
             throw new Error('Could not resolve student array from response');
         }
 
-        console.log("generating student marksheets");
+        console.log("Generating student marksheets...");
 
         // Step 4: Generate ODTs and PDFs
         for (const student of students) {
@@ -133,15 +146,14 @@ async function GenerateOdtFile() {
             pdfPaths.push(pdfPath);
         }
 
-        console.log("merging student marksheets");
+        console.log("Merging student marksheets...");
 
-        // Step 5: Merge PDFs
         let uploadedFileUrl = null;
         let filePath = null;
         if (pdfPaths.length > 0) {
             await mergePdfs(pdfPaths, mergedPdfPath);
 
-            // Step 6: Upload to DigitalOcean Spaces using `form-data`
+            // Step 6: Upload to DigitalOcean Spaces
             filePath = `templates/marksheets/${_school}/result/${batchId}_${jobId}.pdf`;
 
             const fileBuffer = await fs.promises.readFile(mergedPdfPath);
@@ -168,9 +180,8 @@ async function GenerateOdtFile() {
             const { data } = await uploadRes.json();
             uploadedFileUrl = `http://schoolerp-bucket.blr1.digitaloceanspaces.com/${filePath}`;
 
-            console.log("updating jobhistory table");
+            console.log("Updating job_history table...");
 
-            // Step 7: Update job_history table
             const jobUpdatePayload = {
                 _school: _school,
                 table: 'job_history',
@@ -180,9 +191,6 @@ async function GenerateOdtFile() {
                     status: true,
                 },
             };
-
-            console.log("jobUpdatePayload", jobUpdatePayload);
-
 
             const jobUpdateRes = await fetch("https://jnpsbhopal.launchmysite.in/api/updatejobHistory", {
                 method: 'POST',
@@ -199,14 +207,14 @@ async function GenerateOdtFile() {
             }
 
             const jobUpdateData = await jobUpdateRes.json();
-            console.log('job_history updated successfully:', jobUpdateData);
+            console.log('Job_history updated successfully:', jobUpdateData);
         } else {
             console.log('No PDFs were generated to merge.');
         }
 
         console.log("Marksheets generated and uploaded successfully");
 
-        // Step 8: Return response
+        // Final response log
         console.log(JSON.stringify({
             message: 'Marksheets generated and uploaded successfully',
             pdfPath: uploadedFileUrl || mergedPdfPath,
@@ -217,7 +225,6 @@ async function GenerateOdtFile() {
         console.error(`Failed to generate or upload marksheets: ${error.message}`);
         process.exit(1);
     } finally {
-        // Step 9: Clean up files and directory
         if (outputDir && (await fs.promises.access(outputDir).then(() => true).catch(() => false))) {
             try {
                 await fs.promises.rm(outputDir, { recursive: true, force: true });
@@ -229,7 +236,7 @@ async function GenerateOdtFile() {
     }
 }
 
-// Transform data according to mapping
+// Utility functions
 function transformData(student, keyMap) {
     const result = {};
     for (const [newKey, oldKey] of Object.entries(keyMap)) {
@@ -323,7 +330,7 @@ async function mergePdfs(pdfPaths, outputPath) {
 }
 
 // Call the main function
-GenerateOdtFile(null)
+GenerateOdtFile()
     .then(() => {
         console.log("✅ Marksheets generated successfully.");
     })
