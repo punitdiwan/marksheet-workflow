@@ -57,14 +57,30 @@ async function GenerateOdtFile() {
         }
 
         // Select mapping entry with courseId + batchId match, or fall back to courseId only
-        const selectedMappingEntry = keyMapRaw.find(entry =>
-            entry.course_id == courseId &&
-            Array.isArray(entry.batches) &&
-            entry.batches.includes(batchId)
-        );
+        let selectedMappingEntry = null;
 
-        if (!selectedMappingEntry) {
-            throw new Error(`No mapping entry found matching courseId: ${courseId} and batchId: ${batchId}`);
+        if (keyMapRaw.length === 1) {
+            // Only one entry — use it
+            selectedMappingEntry = keyMapRaw[0];
+        } else {
+            // Filter entries that match courseId
+            const courseMatches = keyMapRaw.filter(entry => entry.course_id == courseId);
+
+            // If some of them have non-empty batches, filter further by batchId
+            const hasBatches = courseMatches.some(entry => Array.isArray(entry.batches) && entry.batches.length > 0);
+
+            if (hasBatches) {
+                selectedMappingEntry = courseMatches.find(entry =>
+                    Array.isArray(entry.batches) && entry.batches.includes(batchId)
+                );
+            } else {
+                // No batches info — fallback to course match only
+                selectedMappingEntry = courseMatches[0];
+            }
+        }
+
+        if (!selectedMappingEntry || !selectedMappingEntry.mappings) {
+            throw new Error(`No suitable mapping entry found for courseId: ${courseId} and batchId: ${batchId}`);
         }
 
 
