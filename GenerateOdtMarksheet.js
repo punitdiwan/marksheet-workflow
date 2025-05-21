@@ -50,9 +50,18 @@ async function GenerateOdtFile() {
         }
 
         const mappingJson = await mappingResponse.json();
-        const keyMap = mappingJson.mappings || mappingJson.data || {};
+        // const keyMap = mappingJson.mappings || mappingJson.data || {};
 
-        console.log("keyMapkeyMap", keyMap);
+        let keyMap = mappingJson.mappings || mappingJson.data || {};
+        if (typeof keyMap === 'string') {
+            try {
+                keyMap = JSON.parse(keyMap);
+            } catch (err) {
+                throw new Error('Failed to parse mappings JSON string from API');
+            }
+        }
+
+        console.log("keyMap.mappings", keyMap.mappings);
 
 
         if (!keyMap || typeof keyMap !== 'object') {
