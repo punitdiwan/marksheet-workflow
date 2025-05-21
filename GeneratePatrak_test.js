@@ -234,7 +234,7 @@ async function main() {
         await downloadTemplate(templateUrl, localTemplatePath);
         const valuesArray = await getMarks();
         console.log("valuesArray", valuesArray?.length);
-        console.log("valuesArray", valuesArray);
+        // console.log("valuesArray", valuesArray);
 
 
         // const studentData = await getStudentCount();
