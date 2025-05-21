@@ -36,7 +36,7 @@ async function getStudentCount() {
     };
 
     try {
-        const fullUrl = `https://${_school}.edusparsh.com/api/cce_examv1/studentCount`;
+        const fullUrl = `https://demoschool.edusparsh.com/api/cce_examv1/studentCount`;
         const studentResponse = await fetch(fullUrl, {
             method: 'POST',
             headers: {
@@ -237,8 +237,8 @@ async function main() {
         console.log("valuesArray", valuesArray);
 
 
-        // const studentData = await getStudentCount();
-        await fillTemplate(valuesArray);
+        const studentData = await getStudentCount();
+        await fillTemplate(valuesArray, studentData);
         console.log('Process completed successfully.');
     } catch (error) {
         console.error('Error during process:', error);
