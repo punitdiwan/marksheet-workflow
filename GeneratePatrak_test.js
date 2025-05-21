@@ -71,30 +71,25 @@ async function fillTemplate(valuesArray, studentData) {
     const isSpecialBatch = specialBatches.includes(batchId);
 
     // Dynamic row configuration
-    const headerRowIndex = isSpecialBatch ? 22 : 18; // :18
-    let rowIndex1 = isSpecialBatch ? 23 : 19; // :19
+    const headerRowIndex = isSpecialBatch ? 22 : 18;
+    let rowIndex1 = isSpecialBatch ? 23 : 19;
 
     const sheet1 = workbook.worksheets[0];
     const headerRow1 = sheet1.getRow(headerRowIndex);
-    // const headers1 = headerRow1.values.slice(1).map(header => {
-    //     // Ensure headers are strings
-    //     return typeof header === 'string' ? header : (header.text || '');
-    // });
 
-    // new comment
-    const headers1 = headerRow1?.values.slice(1);
-
-    // const headers1 = headerRow1?.values.slice(1).map(header => {
-    //     if (typeof header === 'string') return header;
-    //     if (typeof header === 'object' && header !== null) {
-    //         if (header.text) return header.text;
-    //         if (header.richText && Array.isArray(header.richText)) {
-    //             return header.richText.map(rt => rt.text).join('');
-    //         }
-    //     }
-    //     return '';
-    // });
-
+    // Robust header extraction
+    const headers1 = headerRow1?.values.slice(1).map(header => {
+        if (typeof header === 'string') {
+            return header;
+        }
+        if (typeof header === 'object' && header !== null) {
+            if (header.text) return header.text;
+            if (Array.isArray(header.richText)) {
+                return header.richText.map(rt => rt.text).join('');
+            }
+        }
+        return '';
+    });
 
     let lastFilledRow1 = rowIndex1;
 
@@ -102,17 +97,13 @@ async function fillTemplate(valuesArray, studentData) {
         const row = sheet1.getRow(rowIndex1);
 
         headers1.forEach((header, colIndex) => {
-            const key = header?.replace(/[{}]/g, '');
+            const key = header.replace(/[{}]/g, '');
+            const cellValue = values[key];
 
-            if (values.hasOwnProperty(key)) {
-                const cellValue = values[key];
-                row.getCell(colIndex + 1).value =
-                    typeof cellValue === 'string' && cellValue.startsWith('=')
-                        ? { formula: cellValue.substring(1) }
-                        : cellValue ?? null;
-            } else {
-                row.getCell(colIndex + 1).value = null;
-            }
+            row.getCell(colIndex + 1).value =
+                typeof cellValue === 'string' && cellValue.startsWith('=')
+                    ? { formula: cellValue.substring(1) }
+                    : cellValue ?? null;
         });
 
         // Student count data
@@ -184,14 +175,19 @@ async function fillTemplate(valuesArray, studentData) {
     workbook.calcProperties.calcOnSave = true;
 
     sheet1.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-        if (rowNumber >= (isSpecialBatch ? 23 : 19)) {
-            row.eachCell((cell) => {
-                if (cell.formula) {
-                    cell.value = { formula: cell.formula, result: null };
-                }
-            });
-        }
+        if (rowNumber >= rowIndex1) return;
+
+        row.eachCell((cell) => {
+            if (cell.formula) {
+                cell.value = { formula: cell.formula, result: null };
+            }
+        });
     });
+
+    // Ensure output folder exists
+    if (!fs.existsSync(outputFolder)) {
+        fs.mkdirSync(outputFolder);
+    }
 
     const updatedFilePath = path.join(outputFolder, 'filled-patrak.xlsx');
     await workbook.xlsx.writeFile(updatedFilePath);
@@ -225,6 +221,7 @@ async function getMarks() {
         return response.data.data;
     } catch (error) {
         console.error('Error making POST request:', error);
+        throw error;
     }
 }
 
@@ -232,13 +229,13 @@ async function getMarks() {
 async function main() {
     try {
         await downloadTemplate(templateUrl, localTemplatePath);
+
         const valuesArray = await getMarks();
-        console.log("valuesArray", valuesArray?.length);
-        // console.log("valuesArray", valuesArray);
+        console.log("valuesArray length:", valuesArray?.length);
+        console.log("valuesArray sample:", valuesArray?.[0]);
 
-
-        // const studentData = await getStudentCount();
-        await fillTemplate(valuesArray);
+        const studentData = await getStudentCount();
+        await fillTemplate(valuesArray, studentData);
         console.log('Process completed successfully.');
     } catch (error) {
         console.error('Error during process:', error);
