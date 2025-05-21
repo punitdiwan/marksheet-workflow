@@ -57,18 +57,16 @@ async function GenerateOdtFile() {
         }
 
         // Select mapping entry with courseId + batchId match, or fall back to courseId only
-        let selectedMappingEntry = keyMapRaw.find(entry =>
+        const selectedMappingEntry = keyMapRaw.find(entry =>
             entry.course_id == courseId &&
             Array.isArray(entry.batches) &&
             entry.batches.includes(batchId)
         );
 
         if (!selectedMappingEntry) {
-            selectedMappingEntry = keyMapRaw.find(entry =>
-                entry.course_id == courseId &&
-                (!entry.batches || entry.batches.length === 0)
-            );
+            throw new Error(`No mapping entry found matching courseId: ${courseId} and batchId: ${batchId}`);
         }
+
 
         if (!selectedMappingEntry || !selectedMappingEntry.mappings) {
             throw new Error('No suitable mapping entry found for given course and batch');
