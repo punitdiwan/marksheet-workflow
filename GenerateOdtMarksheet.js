@@ -52,16 +52,20 @@ async function GenerateOdtFile() {
         const mappingJson = await mappingResponse.json();
         // const keyMap = mappingJson.mappings || mappingJson.data || {};
 
-        let keyMap = mappingJson.mappings || mappingJson.data || {};
-        if (typeof keyMap === 'string') {
-            try {
-                keyMap = JSON.parse(keyMap);
-            } catch (err) {
-                throw new Error('Failed to parse mappings JSON string from API');
-            }
+        let keyMapRaw = mappingJson.mappings || mappingJson.data || [];
+
+        if (!Array.isArray(keyMapRaw) || keyMapRaw.length === 0 || !keyMapRaw[0].mappings) {
+            throw new Error('Mapping format from API is invalid or empty');
         }
 
-        console.log("keyMap.mappings", keyMap);
+        let keyMap;
+        try {
+            keyMap = JSON.parse(keyMapRaw[0].mappings);
+        } catch (err) {
+            throw new Error('Failed to parse mappings JSON string from API');
+        }
+
+        console.log("keyMap", keyMap);
 
 
         // if (!keyMap || typeof keyMap !== 'object') {
