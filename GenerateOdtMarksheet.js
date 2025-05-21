@@ -98,6 +98,8 @@ async function GenerateOdtFile() {
             throw new Error('Could not resolve student array from response');
         }
 
+        console.log("generating student marksheets");
+
         // Step 4: Generate ODTs and PDFs
         for (const student of students) {
             const transformedData = transformData(student, keyMap);
@@ -110,6 +112,8 @@ async function GenerateOdtFile() {
             odtPaths.push(odtFilename);
             pdfPaths.push(pdfPath);
         }
+
+        console.log("merging student marksheets");
 
         // Step 5: Merge PDFs
         let uploadedFileUrl = null;
@@ -144,6 +148,8 @@ async function GenerateOdtFile() {
             const { data } = await uploadRes.json();
             uploadedFileUrl = `http://schoolerp-bucket.blr1.digitaloceanspaces.com/${filePath}`;
 
+            console.log("updating jobhistory table");
+
             // Step 7: Update job_history table
             const jobUpdatePayload = {
                 _school: _school,
@@ -174,6 +180,8 @@ async function GenerateOdtFile() {
         } else {
             console.log('No PDFs were generated to merge.');
         }
+
+        console.log("Marksheets generated and uploaded successfully");
 
         // Step 8: Return response
         console.log(JSON.stringify({
