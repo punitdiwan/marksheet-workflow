@@ -60,17 +60,21 @@ async function GenerateOdtFile() {
 
         let keyMap;
         try {
-            keyMap = JSON.parse(keyMapRaw[0].mappings);
+            let rawMappingStr = keyMapRaw[0].mappings;
+            console.log("rawMappingStr", rawMappingStr);
+
+
+            // Add quotes around unquoted keys and unquoted string values
+            rawMappingStr = rawMappingStr
+                .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":') // keys
+                .replace(/:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=[,}])/g, ':"$1"'); // unquoted values
+
+            keyMap = JSON.parse(rawMappingStr);
         } catch (err) {
+            console.error("⚠️ Raw mapping string that failed:", keyMapRaw[0].mappings);
             throw new Error('Failed to parse mappings JSON string from API');
         }
 
-        console.log("keyMap", keyMap);
-
-
-        // if (!keyMap || typeof keyMap !== 'object') {
-        //     throw new Error('Invalid or missing mappings from API response');
-        // }
 
         // Step 2: Prepare directories and file lists
         outputDir = path.join('/tmp', `output_${Date.now()}`); // Unique directory in /tmp
