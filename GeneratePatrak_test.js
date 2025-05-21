@@ -116,15 +116,15 @@ async function fillTemplate(valuesArray, studentData) {
         });
 
         // Student count data
-        // sheet1.getCell('AR2').value = studentData?.caste?.general?.total ?? 0;
-        // sheet1.getCell('AR3').value = studentData?.caste?.obc?.total ?? 0;
-        // sheet1.getCell('AR4').value = studentData?.caste?.st?.total ?? 0;
-        // sheet1.getCell('AR5').value = studentData?.caste?.sc?.total ?? 0;
-        // sheet1.getCell('AR6').value = studentData?.total ?? 0;
+        sheet1.getCell('AR2').value = studentData?.caste?.general?.total ?? 0;
+        sheet1.getCell('AR3').value = studentData?.caste?.obc?.total ?? 0;
+        sheet1.getCell('AR4').value = studentData?.caste?.st?.total ?? 0;
+        sheet1.getCell('AR5').value = studentData?.caste?.sc?.total ?? 0;
+        sheet1.getCell('AR6').value = studentData?.total ?? 0;
 
-        // sheet1.getCell('AU4').value = studentData?.gender?.male?.total ?? 0;
-        // sheet1.getCell('AU5').value = studentData?.gender?.female?.total ?? 0;
-        // sheet1.getCell('AU6').value = studentData?.total ?? 0;
+        sheet1.getCell('AU4').value = studentData?.gender?.male?.total ?? 0;
+        sheet1.getCell('AU5').value = studentData?.gender?.female?.total ?? 0;
+        sheet1.getCell('AU6').value = studentData?.total ?? 0;
 
         row.commit();
         lastFilledRow1 = rowIndex1;
