@@ -161,7 +161,10 @@ async function GenerateOdtFile() {
                 },
             };
 
-            const jobUpdateRes = await fetch("https://demoschool.edusparsh.com/api/updatejobHistory", {
+            console.log("jobUpdatePayload", jobUpdatePayload);
+
+
+            const jobUpdateRes = await fetch("https://jnpsbhopal.launchmysite.in/api/updatejobHistory", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
