@@ -36,7 +36,7 @@ async function GenerateOdtFile() {
         }
 
         // Step 1.1: Fetch mappings dynamically
-        const mappingResponse = await fetch('https://demoschool.edusparsh.com/api/getMarksheetMappings', {
+        const mappingResponse = await fetch('https://jnpsbhopal.launchmysite.in/api/getMarksheetMappings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -51,6 +51,9 @@ async function GenerateOdtFile() {
 
         const mappingJson = await mappingResponse.json();
         const keyMap = mappingJson.mappings || mappingJson.data || {};
+
+        console.log("keyMapkeyMap", keyMap);
+
 
         if (!keyMap || typeof keyMap !== 'object') {
             throw new Error('Invalid or missing mappings from API response');
