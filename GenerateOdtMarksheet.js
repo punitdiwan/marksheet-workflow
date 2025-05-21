@@ -61,12 +61,12 @@ async function GenerateOdtFile() {
             }
         }
 
-        console.log("keyMap.mappings", keyMap.mappings);
+        console.log("keyMap.mappings", keyMap);
 
 
-        if (!keyMap || typeof keyMap !== 'object') {
-            throw new Error('Invalid or missing mappings from API response');
-        }
+        // if (!keyMap || typeof keyMap !== 'object') {
+        //     throw new Error('Invalid or missing mappings from API response');
+        // }
 
         // Step 2: Prepare directories and file lists
         outputDir = path.join('/tmp', `output_${Date.now()}`); // Unique directory in /tmp
