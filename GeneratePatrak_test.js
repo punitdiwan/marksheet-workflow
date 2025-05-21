@@ -237,7 +237,7 @@ async function main() {
         console.log("valuesArray", valuesArray);
 
 
-        const studentData = await getStudentCount();
+        // const studentData = await getStudentCount();
         await fillTemplate(valuesArray, studentData);
         console.log('Process completed successfully.');
     } catch (error) {
