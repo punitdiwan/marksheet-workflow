@@ -17,9 +17,6 @@ on:
         description: Division ID
       JOB_ID:
         description: JOB ID
-      API_URL:
-        description: API URL
-        required: true
       COURSE_ID:
         description: COURSE ID
         required: true
@@ -48,7 +45,6 @@ jobs:
           GROUP_ID="${{ github.event.inputs.GROUP_ID }}"
           RANKING_ID="${{ github.event.inputs.RANKING_ID }}"
           DIVISION_ID="${{ github.event.inputs.DIVISION_ID }}"
-          API_URL="${{ github.event.inputs.API_URL }}"
           TEMPLATE_URL="${{ github.event.inputs.TEMPLATE_URL }}"
           JOB_ID="${{ github.event.inputs.JOB_ID }}"
           COURSE_ID="${{ github.event.inputs.COURSE_ID }}"
@@ -58,7 +54,6 @@ jobs:
           echo "GROUP_ID=$GROUP_ID" >> $GITHUB_ENV
           echo "RANKING_ID=$RANKING_ID" >> $GITHUB_ENV
           echo "DIVISION_ID=$DIVISION_ID" >> $GITHUB_ENV
-          echo "API_URL=$API_URL" >> $GITHUB_ENV
           echo "TEMPLATE_URL=$TEMPLATE_URL" >> $GITHUB_ENV
           echo "JOB_ID=$JOB_ID" >> $GITHUB_ENV
           echo "COURSE_ID=$COURSE_ID" >> $GITHUB_ENV
