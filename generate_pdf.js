@@ -34,7 +34,9 @@ async function uploadFilesInBatches(files, batchSize) {
         formData.append('merge', 'true');
 
         // Define the API endpoint
-        const url = 'https://demo.gotenberg.dev/forms/libreoffice/convert';
+        // const url = 'https://demo.gotenberg.dev/forms/libreoffice/convert';
+        const url = 'http://studio.maitretech.com:3000/forms/libreoffice/convert'
+
 
         try {
             const response = await axios.post(url, formData, {
