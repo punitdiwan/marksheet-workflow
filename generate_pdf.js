@@ -62,4 +62,4 @@ async function uploadFilesInBatches(files, batchSize) {
 }
 
 // Call the function with a batch size of 5 (or whatever size you prefer)
-uploadFilesInBatches(sortedFiles, 5);
+uploadFilesInBatches(sortedFiles, 4);
