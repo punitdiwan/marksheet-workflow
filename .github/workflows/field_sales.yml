@@ -1,0 +1,47 @@
+name: field Sales backup
+on:
+  workflow_dispatch:
+    inputs:
+      db_password:
+        description: "Enter database password"
+      db_name:
+        description: "Enter database name"
+      db_username:
+        description: "Enter database username"
+      db_host:
+        description: "Enter database host"
+      schema_name:
+        description: "Enter schema name"
+      project_name:
+        description: "Enter database project name"
+      
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install DO Space
+        run: npm install -g spaces-cli
+      
+      - name: Install postgres cli
+        run: |
+          sudo apt-get update
+          sudo apt-get install postgresql-client
+
+      - name: Give executive permissions
+        run: |
+          ls && chmod +x export_project_data.sh
+
+      - name: Run the script
+        run: ./export_project_data.sh ${{ github.event.inputs.db_password }} ${{ github.event.inputs.db_name }} ${{ github.event.inputs.db_username }} ${{ github.event.inputs.db_host }} ${{ github.event.inputs.schema_name }} ${{ github.event.inputs.project_name }}
+      
+      - name: Upload a file
+        run: |
+            spaces-cli up -s schoolerp-bucket -r blr1 -i ${{ secrets.DO_ACCESS_KEY_ID }} -k ${{ secrets.DO_SECRET_ACCESS_KEY }} -t /field_Sales/"${{ github.event.inputs.project_name }}_backup.zip" "${{ github.event.inputs.project_name }}_backup.zip"
+          
