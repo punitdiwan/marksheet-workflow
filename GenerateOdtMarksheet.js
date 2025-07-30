@@ -60,50 +60,53 @@ async function GenerateOdtFile() {
 
         console.log("Searching for a suitable mapping...");
 
-        // Corrected the property name from `course_id` to `courses` to match the API response.
-        // Also made the logic robust to handle if `courses` is a string or an array.
+        // --- START: NEW ROBUST MAPPING LOGIC ---
+
+        // 1. Filter by Course ID
         const courseMatches = keyMapRaw.filter(entry => {
-            if (!entry || !entry.courses) {
-                return false; // Skip if the entry or its 'courses' property is missing
-            }
-            // Check if the `courses` property (as a string or in an array) matches our `courseId`
-            if (Array.isArray(entry.courses)) {
-                return entry.courses.includes(courseId);
-            } else {
-                return entry.courses === courseId;
-            }
+            if (!entry || !entry.courses) return false;
+            return Array.isArray(entry.courses) ? entry.courses.includes(courseId) : entry.courses === courseId;
         });
 
         if (courseMatches.length === 0) {
-            // This error now definitively means the courseId from your .env was not found in the API response.
-            // Check the log above to see what course_id values were actually returned.
-            throw new Error(`No mapping entries found for courseId: ${courseId}. Cannot proceed.`);
+            throw new Error(`No mapping entries found for courseId: ${courseId}.`);
         }
-
         console.log(`Found ${courseMatches.length} mapping(s) for courseId: ${courseId}.`);
 
-        // 3. From the course-specific mappings, try to find a perfect match with the batchId.
-        // This is the most specific and preferred mapping.
-        let selectedMappingEntry = courseMatches.find(entry =>
-            Array.isArray(entry.batches) && entry.batches.includes(batchId)
-        );
+        // 2. Filter by Template File Type (e.g., 'odt')
+        const templateExtension = path.extname(templateUrl).substring(1);
+        let templateTypeMatches = courseMatches.filter(entry => entry.file_type === templateExtension);
 
-        // 4. If a batch-specific mapping was NOT found, fall back to a general one.
-        if (!selectedMappingEntry) {
-            console.warn(`⚠️  Batch-specific mapping not found for batchId: ${batchId}. Falling back to a general course mapping.`);
+        console.log(`Found ${templateTypeMatches.length} mapping(s) for template type '${templateExtension}'.`);
 
-            // As a fallback, use the first mapping that matches the course.
-            // This assumes the first entry is a valid generic/default for the course.
-            selectedMappingEntry = courseMatches[0];
-        } else {
-            console.log(`✅ Found specific mapping for batchId: ${batchId}.`);
+        // If no matches for the specific type, maybe the data is inconsistent. Widen the search.
+        if (templateTypeMatches.length === 0) {
+            console.warn(`No mappings found for exact type '${templateExtension}'. Using all course matches as a fallback pool.`);
+            templateTypeMatches = courseMatches;
         }
-        // --- END: Corrected Mapping Selection Logic ---
 
-        // This check now correctly validates the outcome of our improved logic.
+        // 3. Find a specific batch match within the correct file type
+        let selectedMappingEntry = templateTypeMatches.find(entry => {
+            if (!entry.batches) return false;
+            // Handle `batches` being a string OR an array
+            return Array.isArray(entry.batches)
+                ? entry.batches.includes(batchId)
+                : entry.batches === batchId;
+        });
+
+        // 4. If a specific batch match is found, use it. Otherwise, use a smart fallback.
+        if (selectedMappingEntry) {
+            console.log(`✅ Found specific mapping for batchId: ${batchId} and template type: ${templateExtension}.`);
+        } else {
+            console.warn(`⚠️  Batch-specific mapping not found. Falling back to the first available general mapping for type '${templateExtension}'.`);
+            // Fallback: Find the FIRST entry of the correct type that HAS valid mappings.
+            selectedMappingEntry = templateTypeMatches.find(entry => entry && entry.mappings);
+        }
+        // --- END: NEW ROBUST MAPPING LOGIC ---
+
+        // 5. Final validation
         if (!selectedMappingEntry || !selectedMappingEntry.mappings) {
-            // This error will now only be thrown if, after all fallbacks, no valid mapping could be resolved.
-            throw new Error(`Could not resolve a valid mapping entry for courseId: ${courseId} even after fallback attempts.`);
+            throw new Error(`Could not resolve a valid mapping with content for courseId: ${courseId} and template type: ${templateExtension}, even after fallback attempts.`);
         }
 
         let rawMappingStr = selectedMappingEntry.mappings;
