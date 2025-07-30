@@ -36,7 +36,7 @@ async function GenerateOdtFile() {
         }
 
         // Step 1.1: Fetch mappings dynamically
-        const mappingResponse = await fetch('https://jnpsbhopal.launchmysite.in/api/getMarksheetMappings', {
+        const mappingResponse = await fetch('https://demoschool.edusparsh.com/api/getMarksheetMappings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -123,7 +123,7 @@ async function GenerateOdtFile() {
             }
         };
 
-        const studentResponse = await fetch('https://jnpsbhopal.launchmysite.in/api/cce_examv1/getMarks', {
+        const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(marksPayload),
@@ -206,7 +206,7 @@ async function GenerateOdtFile() {
                 },
             };
 
-            const jobUpdateRes = await fetch("https://jnpsbhopal.launchmysite.in/api/updatejobHistory", {
+            const jobUpdateRes = await fetch("https://demoschool.edusparsh.com/api/updatejobHistory", {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
