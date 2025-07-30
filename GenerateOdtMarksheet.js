@@ -155,7 +155,7 @@ async function GenerateOdtFile() {
         }
 
         const studentResponseJson = await studentResponse.json();
-        console.log("📦 Raw student API response:", JSON.stringify(studentResponseJson, null, 2));
+        // console.log("📦 Raw student API response:", JSON.stringify(studentResponseJson, null, 2));
         let students = studentResponseJson.students;
         if (!Array.isArray(students)) {
             students = studentResponseJson.data || studentResponseJson.result?.students || [];
