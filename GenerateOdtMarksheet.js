@@ -54,18 +54,24 @@ async function GenerateOdtFile() {
         const mappingJson = await mappingResponse.json();
         let keyMapRaw = mappingJson.mappings || mappingJson.data || [];
 
+        console.log("🔍 Received raw mapping data from API:", JSON.stringify(keyMapRaw, null, 2));
+
         if (!Array.isArray(keyMapRaw) || keyMapRaw.length === 0) {
-            throw new Error('Mapping format from API is invalid or empty');
+            throw new Error('Mapping format from API is invalid or empty. The API returned no mappings.');
         }
 
         // --- START: Corrected Mapping Selection Logic ---
         console.log("Searching for a suitable mapping...");
 
-        // 1. Filter all mappings to get only those that match the `courseId`.
-        const courseMatches = keyMapRaw.filter(entry => entry.course_id == courseId);
+        // 2. MAKE THE FILTER MORE ROBUST
+        // This handles cases where entry.course_id might be null or undefined in some records
+        const courseMatches = keyMapRaw.filter(entry =>
+            entry && entry.course_id && entry.course_id.toString() === courseId.toString()
+        );
 
-        // 2. If no mappings exist for this course at all, it's an unrecoverable error.
         if (courseMatches.length === 0) {
+            // This error now definitively means the courseId from your .env was not found in the API response.
+            // Check the log above to see what course_id values were actually returned.
             throw new Error(`No mapping entries found for courseId: ${courseId}. Cannot proceed.`);
         }
 
@@ -152,7 +158,11 @@ async function GenerateOdtFile() {
             throw new Error('Could not resolve student array from response');
         }
 
-        console.log("Generating student marksheets...");
+        if (students.length === 0) {
+            console.warn("⚠️ Warning: No students found for the given criteria. No marksheets will be generated.");
+        } else {
+            console.log(`Generating marksheets for ${students.length} students...`);
+        }
 
         // Step 4: Generate ODTs and PDFs
         for (const student of students) {
@@ -257,7 +267,7 @@ async function GenerateOdtFile() {
     }
 }
 
-// Utility functions
+// Utility functions (no changes below this line)
 function transformData(student, keyMap) {
     const result = {};
     for (const [newKey, oldKey] of Object.entries(keyMap)) {
