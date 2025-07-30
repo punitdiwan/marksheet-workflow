@@ -15,6 +15,8 @@ async function GenerateOdtFile() {
     let outputDir = '';
     try {
 
+        console.log("try start");
+
         // Step 1: Get Payload
         const groupid = process.env.GROUP_ID;
         const _school = process.env.SCHOOL_ID;
