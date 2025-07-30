@@ -28,8 +28,6 @@ async function GenerateOdtFile() {
         const templateUrl = process.env.TEMPLATE_URL;
         const group = groupid?.split(",")
 
-
-
         if (!templateUrl || typeof templateUrl !== 'string') {
             throw new Error('Invalid or missing template URL in payload');
         }
@@ -60,14 +58,21 @@ async function GenerateOdtFile() {
             throw new Error('Mapping format from API is invalid or empty. The API returned no mappings.');
         }
 
-        // --- START: Corrected Mapping Selection Logic ---
         console.log("Searching for a suitable mapping...");
 
-        // 2. MAKE THE FILTER MORE ROBUST
-        // This handles cases where entry.course_id might be null or undefined in some records
-        const courseMatches = keyMapRaw.filter(entry =>
-            entry && entry.course_id && entry.course_id.toString() === courseId.toString()
-        );
+        // Corrected the property name from `course_id` to `courses` to match the API response.
+        // Also made the logic robust to handle if `courses` is a string or an array.
+        const courseMatches = keyMapRaw.filter(entry => {
+            if (!entry || !entry.courses) {
+                return false; // Skip if the entry or its 'courses' property is missing
+            }
+            // Check if the `courses` property (as a string or in an array) matches our `courseId`
+            if (Array.isArray(entry.courses)) {
+                return entry.courses.includes(courseId);
+            } else {
+                return entry.courses === courseId;
+            }
+        });
 
         if (courseMatches.length === 0) {
             // This error now definitively means the courseId from your .env was not found in the API response.
@@ -105,8 +110,8 @@ async function GenerateOdtFile() {
         console.log("Selected raw mapping string:", rawMappingStr);
 
         rawMappingStr = rawMappingStr
-            .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":') // keys
-            .replace(/:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=[,}])/g, ':"$1"'); // unquoted values
+            .replace(/([{,]\s*)([a-zA-Z0-9_]+)\s*:/g, '$1"$2":')
+            .replace(/:\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=[,}])/g, ':"$1"');
 
         let keyMap;
         try {
@@ -148,7 +153,6 @@ async function GenerateOdtFile() {
 
         const studentResponseJson = await studentResponse.json();
         console.log("📦 Raw student API response:", JSON.stringify(studentResponseJson, null, 2));
-
         let students = studentResponseJson.students;
         if (!Array.isArray(students)) {
             students = studentResponseJson.data || studentResponseJson.result?.students || [];
