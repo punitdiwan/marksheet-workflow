@@ -58,36 +58,41 @@ async function GenerateOdtFile() {
             throw new Error('Mapping format from API is invalid or empty');
         }
 
-        // Select mapping entry with courseId + batchId match, or fall back to courseId only
-        let selectedMappingEntry = null;
+        // --- START: Corrected Mapping Selection Logic ---
+        console.log("Searching for a suitable mapping...");
 
-        if (keyMapRaw.length === 1) {
-            // Only one entry — use it
-            selectedMappingEntry = keyMapRaw[0];
+        // 1. Filter all mappings to get only those that match the `courseId`.
+        const courseMatches = keyMapRaw.filter(entry => entry.course_id == courseId);
+
+        // 2. If no mappings exist for this course at all, it's an unrecoverable error.
+        if (courseMatches.length === 0) {
+            throw new Error(`No mapping entries found for courseId: ${courseId}. Cannot proceed.`);
+        }
+
+        console.log(`Found ${courseMatches.length} mapping(s) for courseId: ${courseId}.`);
+
+        // 3. From the course-specific mappings, try to find a perfect match with the batchId.
+        // This is the most specific and preferred mapping.
+        let selectedMappingEntry = courseMatches.find(entry =>
+            Array.isArray(entry.batches) && entry.batches.includes(batchId)
+        );
+
+        // 4. If a batch-specific mapping was NOT found, fall back to a general one.
+        if (!selectedMappingEntry) {
+            console.warn(`⚠️  Batch-specific mapping not found for batchId: ${batchId}. Falling back to a general course mapping.`);
+
+            // As a fallback, use the first mapping that matches the course.
+            // This assumes the first entry is a valid generic/default for the course.
+            selectedMappingEntry = courseMatches[0];
         } else {
-            // Filter entries that match courseId
-            const courseMatches = keyMapRaw.filter(entry => entry.course_id == courseId);
-
-            // If some of them have non-empty batches, filter further by batchId
-            const hasBatches = courseMatches.some(entry => Array.isArray(entry.batches) && entry.batches.length > 0);
-
-            if (hasBatches) {
-                selectedMappingEntry = courseMatches.find(entry =>
-                    Array.isArray(entry.batches) && entry.batches.includes(batchId)
-                );
-            } else {
-                // No batches info — fallback to course match only
-                selectedMappingEntry = courseMatches[0];
-            }
+            console.log(`✅ Found specific mapping for batchId: ${batchId}.`);
         }
+        // --- END: Corrected Mapping Selection Logic ---
 
+        // This check now correctly validates the outcome of our improved logic.
         if (!selectedMappingEntry || !selectedMappingEntry.mappings) {
-            throw new Error(`No suitable mapping entry found for courseId: ${courseId} and batchId: ${batchId}`);
-        }
-
-
-        if (!selectedMappingEntry || !selectedMappingEntry.mappings) {
-            throw new Error('No suitable mapping entry found for given course and batch');
+            // This error will now only be thrown if, after all fallbacks, no valid mapping could be resolved.
+            throw new Error(`Could not resolve a valid mapping entry for courseId: ${courseId} even after fallback attempts.`);
         }
 
         let rawMappingStr = selectedMappingEntry.mappings;
