@@ -1,5 +1,5 @@
 // =================================================================
-//          GenerateOdtMarksheet.js (The Final Correct Version)
+//          GenerateOdtMarksheet.js (Final Version with Key Logging)
 // =================================================================
 
 const fs = require('fs');
@@ -38,7 +38,6 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
 });
 
 async function fetchMarksheetConfig(groupIds) {
-    // This function is correct. No changes needed.
     console.log(`Fetching config for groups: ${groupIds}`);
     const { data: examGroups, error: groupsError } = await supabase.from('exam_groups').select('_uid, group_code, name').in('_uid', groupIds);
     if (groupsError) throw new Error(`Error fetching exam groups: ${groupsError.message}`);
@@ -58,6 +57,7 @@ async function fetchMarksheetConfig(groupIds) {
 function transformStudentDataForCarbone(studentData, config) {
     const structured = { ...studentData, subjects: [] };
     const grandTotals = {};
+    const templateKeys = new Set();
 
     for (const subject of config.subjects) {
         const subjectRow = { name: subject.sub_name };
@@ -67,15 +67,14 @@ function transformStudentDataForCarbone(studentData, config) {
             const examsInGroup = config.exams.filter(ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid);
 
             for (const exam of examsInGroup) {
-                // Step 1: Find the specific mark in the raw data (e.g., 'hy_1_pt')
                 const dataKey = `${groupCode}_${subject.code}_${exam.exam_code}`;
                 const mark = studentData[dataKey] || '-';
 
-                // ⬇️ --- THIS IS THE FIX --- ⬇️
-                // Step 2: Create a GENERIC key in the subjectRow (e.g., 'hy_pt'), which matches your template
-                subjectRow[`${groupCode}_${exam.exam_code}`] = mark;
+                // THIS IS THE CORRECTED LOGIC
+                const genericKey = `${groupCode}_${exam.exam_code}`;
+                subjectRow[genericKey] = mark;
+                templateKeys.add(genericKey); // Add the generic key to our set
 
-                // Grand total logic is correct
                 const totalKey = `${groupCode}_${exam.exam_code}_total`;
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
             }
@@ -83,23 +82,29 @@ function transformStudentDataForCarbone(studentData, config) {
             const gradeKey = `${groupCode}_${subject.code}_GdC`;
             subjectRow[`${groupCode}_total`] = studentData[totalMarksKey] || '-';
             subjectRow[`${groupCode}_grade`] = studentData[gradeKey] || '-';
+            templateKeys.add(`${groupCode}_total`);
+            templateKeys.add(`${groupCode}_grade`);
         }
         structured.subjects.push(subjectRow);
     }
 
     Object.assign(structured, grandTotals);
 
-    // Logging to verify the fix
-    console.log(`\n--- VERIFY THIS JSON LOG ---`);
-    console.log(`Data for student: ${studentData.full_name || 'N/A'}`);
-    console.log(JSON.stringify(structured.subjects, null, 2)); // Log only the subjects array for clarity
-    console.log(`--------------------------\n`);
+    // NEW LOGGING TO BE EXPLICIT
+    console.log(`\n✅ TEMPLATE CHECKLIST: For the repeating subject row, your template needs these placeholders:`);
+    console.log(`   - First cell (Subject Name): [r.subjects[i].name]`);
+    for (const key of Array.from(templateKeys).sort()) {
+        console.log(`   - A cell for: {d.${key}}`);
+    }
+    console.log(`----------------------------------------------------------------------------------\n`);
 
     return structured;
 }
 
+
 async function GenerateOdtFile() {
-    // This entire function is correct. No changes needed.
+    // This function does not need any more changes.
+
     let outputDir = '';
     const jobId = process.env.JOB_ID;
     try {
