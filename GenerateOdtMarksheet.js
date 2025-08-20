@@ -7,7 +7,7 @@ const util = require('util');
 const fetch = require('node-fetch');
 const carbone = require('carbone');
 const { createClient } = require('@supabase/supabase-js');
-const { PDFDocument } = require('pdf-lib'); // For merging PDFs in JS
+const { PDFDocument } = require('pdf-lib');
 require('dotenv').config();
 
 const execPromise = util.promisify(exec);
@@ -21,21 +21,39 @@ const supabaseUrl = "https://studio.maitretech.com";
 const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q";
 // --- END: HARDCODE YOUR SECRETS HERE ---
 
-if (!supabaseUrl || !supabaseKey || supabaseUrl.includes("your-project-url")) {
-    throw new Error("Supabase URL and Service Key must be hardcoded for this test script.");
+
+
+// Get the dynamic schema name from the environment variables provided by the workflow
+const schemaName = process.env.SCHOOL_ID;
+
+// CRITICAL: Check if the schema name is provided.
+if (!schemaName) {
+    throw new Error("FATAL: SCHOOL_ID (which is used as the schema name) is not defined in environment variables.");
 }
-const supabase = createClient(supabaseUrl, supabaseKey);
+
+console.log(`✅ Initializing Supabase client for schema: "${schemaName}"`);
+
+// Initialize Supabase Client with the dynamic schema
+const supabase = createClient(supabaseUrl, supabaseKey, {
+    db: {
+        schema: schemaName,
+    },
+});
+
+// ⬆️ --- END OF THE KEY CHANGE --- ⬆️
 
 
 async function fetchMarksheetConfig(groupIds, courseId) {
+    // This function will now correctly query within the specified schema
     console.log(`Fetching config for groups: ${groupIds} and course: ${courseId}`);
 
     const { data: examGroups, error: groupsError } = await supabase
-        .from('exam_groups')
+        .from('exam_groups') // No need to change this line. The client handles the schema.
         .select('_uid, group_code, name')
         .in('_uid', groupIds);
     if (groupsError) throw new Error(`Error fetching exam groups: ${groupsError.message}`);
 
+    // ... rest of the function is the same ...
     const { data: exams, error: examsError } = await supabase
         .from('cce_exams')
         .select('exam_code, name, examgroups, subjects!inner(_uid, subject_name, subject_code)')
@@ -53,6 +71,9 @@ async function fetchMarksheetConfig(groupIds, courseId) {
     console.log(`Found ${subjects.length} unique subjects and ${exams.length} exams.`);
     return { examGroups, exams, subjects };
 }
+
+// ... the rest of your file (transformStudentDataForCarbone, GenerateOdtFile, utilities) remains exactly the same.
+// Just ensure the new client initialization block is at the top.
 
 function transformStudentDataForCarbone(studentData, config) {
     const structured = { ...studentData, subjects: [] };
@@ -87,7 +108,7 @@ function transformStudentDataForCarbone(studentData, config) {
 
 async function GenerateOdtFile() {
     let outputDir = '';
-    const jobId = process.env.JOB_ID; // We still need the Job ID from the workflow
+    const jobId = process.env.JOB_ID;
 
     try {
         console.log("Starting dynamic marksheet generation with Carbone...");
@@ -110,7 +131,7 @@ async function GenerateOdtFile() {
             console.warn("Warning: No subjects found for this course. Marksheets may be empty.");
         }
 
-        outputDir = path.join(process.cwd(), 'output'); // Use a local output directory
+        outputDir = path.join(process.cwd(), 'output');
         await fs.promises.mkdir(outputDir, { recursive: true });
         const pdfPaths = [];
 
