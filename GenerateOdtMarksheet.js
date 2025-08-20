@@ -1,5 +1,5 @@
 // =================================================================
-//          GenerateOdtMarksheet.js (Final Version for Simple Template)
+//          GenerateOdtMarksheet.js (The Final Correct Version)
 // =================================================================
 
 const fs = require('fs');
@@ -67,11 +67,10 @@ function transformStudentDataForCarbone(studentData, config) {
             const examsInGroup = config.exams.filter(ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid);
 
             for (const exam of examsInGroup) {
-                const dataKey = `${groupCode}_${subject.code}_${exam.exam_code}`;
-                const mark = studentData[dataKey] || '-';
-
-                const genericKey = `${groupCode}_${exam.exam_code}`;
-                subjectRow[genericKey] = mark;
+                const examCode = exam.exam_code.toLowerCase(); // e.g., "pt", "ia", "M"
+                const normalizedKey = `${groupCode}_${examCode}`; // e.g., "hy_pt"
+                const mark = studentData[`${groupCode}_${subject.code}_${exam.exam_code}`] || '-';
+                subjectRow[normalizedKey] = mark;
 
                 const totalKey = `${groupCode}_${exam.exam_code}_total`;
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
@@ -96,7 +95,7 @@ function transformStudentDataForCarbone(studentData, config) {
 }
 
 async function GenerateOdtFile() {
-    // This entire function is correct. No changes needed.
+    // This function is correct and does not need any more changes.
     let outputDir = '';
     const jobId = process.env.JOB_ID;
     try {
