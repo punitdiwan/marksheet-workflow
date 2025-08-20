@@ -49,7 +49,6 @@ async function fetchMarksheetConfig(groupIds, courseId) {
 
     const { data: exams, error: examsError } = await supabase
         .from('cce_exams')
-        // ⬇️ --- CHANGE 1: Corrected column names to match your schema: sub_name and code --- ⬇️
         .select('exam_code, name, examgroups, subjects!inner(_uid, sub_name, code)')
         .in('examgroups', groupIds);
     if (examsError) throw new Error(`Error fetching exams: ${examsError.message}`);
@@ -71,7 +70,6 @@ function transformStudentDataForCarbone(studentData, config) {
     const grandTotals = {};
 
     for (const subject of config.subjects) {
-        // ⬇️ --- CHANGE 2: Using subject.sub_name which matches the data we fetched --- ⬇️
         const subjectRow = { name: subject.sub_name };
 
         for (const group of config.examGroups) {
@@ -79,14 +77,12 @@ function transformStudentDataForCarbone(studentData, config) {
             const examsInGroup = config.exams.filter(ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid);
 
             for (const exam of examsInGroup) {
-                // ⬇️ --- CHANGE 3: Using subject.code to build the data key --- ⬇️
                 const dataKey = `${groupCode}_${subject.code}_${exam.exam_code}`;
                 const mark = studentData[dataKey] || '-';
                 subjectRow[`${groupCode}_${exam.exam_code}`] = mark;
                 const totalKey = `${groupCode}_${exam.exam_code}_total`;
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
             }
-            // ⬇️ --- CHANGE 4: Using subject.code to build the total marks key --- ⬇️
             const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`;
             const gradeKey = `${groupCode}_${subject.code}_GdC`;
             subjectRow[`${groupCode}_total`] = studentData[totalMarksKey] || '-';
@@ -101,7 +97,6 @@ function transformStudentDataForCarbone(studentData, config) {
 
 
 async function GenerateOdtFile() {
-    // This entire function remains the same
     let outputDir = '';
     const jobId = process.env.JOB_ID;
 
@@ -151,12 +146,21 @@ async function GenerateOdtFile() {
         }
         console.log(`Generating marksheets for ${students.length} students...`);
 
+        // ⬇️ --- KEY CHANGE: Save the template to a file first --- ⬇️
+        console.log("Downloading template from URL...");
         const templateBuffer = await downloadFile(templateUrl);
+        const templatePath = path.join(outputDir, 'template.odt');
+        await fs.promises.writeFile(templatePath, templateBuffer);
+        console.log(`Template saved locally to: ${templatePath} `);
+        // ⬆️ --- END OF KEY CHANGE --- ⬆️
 
         for (const student of students) {
-            console.log(`Processing student: ${student.full_name}`);
+            console.log(`Processing student: ${student.full_name} `);
             const transformedData = transformStudentDataForCarbone(student, marksheetConfig);
-            const odtReport = await carboneRender(templateBuffer, transformedData);
+
+            // ⬇️ --- KEY CHANGE: Use the file path instead of the buffer --- ⬇️
+            const odtReport = await carboneRender(templatePath, transformedData);
+            // ⬆️ --- END OF KEY CHANGE --- ⬆️
 
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
