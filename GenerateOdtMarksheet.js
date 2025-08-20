@@ -67,6 +67,7 @@ function transformStudentDataForCarbone(studentData, config) {
         for (const group of config.examGroups) {
             const groupCode = group.group_code; // e.g., "hy"
 
+            // Get exams for this subject and group
             const examsInGroup = config.exams.filter(
                 exam =>
                     exam.examgroups === group._uid &&
@@ -77,22 +78,20 @@ function transformStudentDataForCarbone(studentData, config) {
                 const examCode = exam.exam_code.toLowerCase(); // e.g., "pt", "ia", "m"
                 const simplifiedKey = `${groupCode}_${examCode}`; // e.g., "hy_pt"
                 const originalKey = `${groupCode}_${subject.code}_${exam.exam_code}`; // e.g., "hy_1_PT"
+
                 const mark = studentData[originalKey] || '-';
 
+                // ✅ Set simplified key for use in the template
+                subjectRow[simplifiedKey] = mark;
 
-
-                if (!subjectRow[simplifiedKey]) {
-                    subjectRow[simplifiedKey] = mark;
-                }
-
-                // Aggregate grand totals per exam type across subjects
+                // For overall totals
                 const totalKey = `${groupCode}_${exam.exam_code}_total`;
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
             }
 
-            // Add total marks and grade for the subject
-            const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`; // e.g., "hy_1_Ob_MarksC"
-            const gradeKey = `${groupCode}_${subject.code}_GdC`; // e.g., "hy_1_GdC"
+            // Subject total and grade
+            const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`;
+            const gradeKey = `${groupCode}_${subject.code}_GdC`;
 
             subjectRow[`${groupCode}_total`] = studentData[totalMarksKey] || '-';
             subjectRow[`${groupCode}_grade`] = studentData[gradeKey] || '-';
@@ -101,7 +100,6 @@ function transformStudentDataForCarbone(studentData, config) {
         structured.subjects.push(subjectRow);
     }
 
-    // Add grand totals to root
     Object.assign(structured, grandTotals);
 
     console.log(`\n--- VERIFY THIS JSON LOG ---`);
