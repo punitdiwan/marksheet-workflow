@@ -1,5 +1,5 @@
 // =================================================================
-//          GenerateOdtMarksheet.js (The Final Definitive Version)
+//          GenerateOdtMarksheet.js (Final Version for Simple Template)
 // =================================================================
 
 const fs = require('fs');
@@ -15,6 +15,7 @@ require('dotenv').config();
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
 
+// --- START: HARDCODE YOUR SECRETS HERE FOR TESTING ---
 // --- START: HARDCODE YOUR SECRETS HERE FOR TESTING ---
 // ⚠️ Replace with your actual Supabase URL and Service Key
 // const supabaseUrl = process.env.SUPABASE_URL;
@@ -59,7 +60,7 @@ function transformStudentDataForCarbone(studentData, config) {
     const grandTotals = {};
 
     for (const subject of config.subjects) {
-        const subjectRow = { name: subject.sub_name, code: subject.code };
+        const subjectRow = { name: subject.sub_name };
 
         for (const group of config.examGroups) {
             const groupCode = group.group_code;
@@ -68,7 +69,12 @@ function transformStudentDataForCarbone(studentData, config) {
             for (const exam of examsInGroup) {
                 const dataKey = `${groupCode}_${subject.code}_${exam.exam_code}`;
                 const mark = studentData[dataKey] || '-';
-                subjectRow[dataKey] = mark; // Add the specific key like "hy_1_pt" to the subject object
+
+                const genericKey = `${groupCode}_${exam.exam_code}`;
+                subjectRow[genericKey] = mark;
+
+                const totalKey = `${groupCode}_${exam.exam_code}_total`;
+                grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
             }
             const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`;
             const gradeKey = `${groupCode}_${subject.code}_GdC`;
@@ -80,21 +86,17 @@ function transformStudentDataForCarbone(studentData, config) {
 
     Object.assign(structured, grandTotals);
 
-    // NEW LOGGING TO BE EXPLICIT
-    console.log(`\n✅ TEMPLATE CHECKLIST: For the repeating subject row, your template needs these placeholders:`);
-    console.log(`   - First cell (Subject Name): [r.subjects[i].name]`);
-    for (const key of Array.from(templateKeys).sort()) {
-        console.log(`   - A cell for: {d.${key}}`);
-    }
-    console.log(`----------------------------------------------------------------------------------\n`);
+    console.log(`\n--- VERIFY THIS JSON LOG ---`);
+    console.log(`Data for student: ${studentData.full_name || 'N/A'}`);
+    console.log(`The 'subjects' array below should now have SIMPLE keys like "hy_pt", "hy_ia", etc.`);
+    console.log(JSON.stringify(structured.subjects, null, 2));
+    console.log(`--------------------------\n`);
 
     return structured;
 }
 
-
 async function GenerateOdtFile() {
-    // This function does not need any more changes.
-
+    // This entire function is correct. No changes needed.
     let outputDir = '';
     const jobId = process.env.JOB_ID;
     try {
