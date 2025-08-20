@@ -26,37 +26,31 @@ const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6IC
 // Get the dynamic schema name from the environment variables provided by the workflow
 const schemaName = process.env.SCHOOL_ID;
 
-// CRITICAL: Check if the schema name is provided.
 if (!schemaName) {
     throw new Error("FATAL: SCHOOL_ID (which is used as the schema name) is not defined in environment variables.");
 }
 
 console.log(`✅ Initializing Supabase client for schema: "${schemaName}"`);
 
-// Initialize Supabase Client with the dynamic schema
 const supabase = createClient(supabaseUrl, supabaseKey, {
     db: {
         schema: schemaName,
     },
 });
 
-// ⬆️ --- END OF THE KEY CHANGE --- ⬆️
-
-
 async function fetchMarksheetConfig(groupIds, courseId) {
-    // This function will now correctly query within the specified schema
     console.log(`Fetching config for groups: ${groupIds} and course: ${courseId}`);
 
     const { data: examGroups, error: groupsError } = await supabase
-        .from('exam_groups') // No need to change this line. The client handles the schema.
+        .from('exam_groups')
         .select('_uid, group_code, name')
         .in('_uid', groupIds);
     if (groupsError) throw new Error(`Error fetching exam groups: ${groupsError.message}`);
 
-    // ... rest of the function is the same ...
     const { data: exams, error: examsError } = await supabase
         .from('cce_exams')
-        .select('exam_code, name, examgroups, subjects!inner(_uid, subject_name, subject_code)')
+        // ⬇️ --- CHANGE 1: Corrected column names to match your schema: sub_name and code --- ⬇️
+        .select('exam_code, name, examgroups, subjects!inner(_uid, sub_name, code)')
         .in('examgroups', groupIds);
     if (examsError) throw new Error(`Error fetching exams: ${examsError.message}`);
 
@@ -72,29 +66,29 @@ async function fetchMarksheetConfig(groupIds, courseId) {
     return { examGroups, exams, subjects };
 }
 
-// ... the rest of your file (transformStudentDataForCarbone, GenerateOdtFile, utilities) remains exactly the same.
-// Just ensure the new client initialization block is at the top.
-
 function transformStudentDataForCarbone(studentData, config) {
     const structured = { ...studentData, subjects: [] };
     const grandTotals = {};
 
     for (const subject of config.subjects) {
-        const subjectRow = { name: subject.subject_name };
+        // ⬇️ --- CHANGE 2: Using subject.sub_name which matches the data we fetched --- ⬇️
+        const subjectRow = { name: subject.sub_name };
 
         for (const group of config.examGroups) {
             const groupCode = group.group_code;
             const examsInGroup = config.exams.filter(ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid);
 
             for (const exam of examsInGroup) {
-                const dataKey = `${groupCode}_${subject.subject_code}_${exam.exam_code}`;
+                // ⬇️ --- CHANGE 3: Using subject.code to build the data key --- ⬇️
+                const dataKey = `${groupCode}_${subject.code}_${exam.exam_code}`;
                 const mark = studentData[dataKey] || '-';
                 subjectRow[`${groupCode}_${exam.exam_code}`] = mark;
                 const totalKey = `${groupCode}_${exam.exam_code}_total`;
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
             }
-            const totalMarksKey = `${groupCode}_${subject.subject_code}_Ob_MarksC`;
-            const gradeKey = `${groupCode}_${subject.subject_code}_GdC`;
+            // ⬇️ --- CHANGE 4: Using subject.code to build the total marks key --- ⬇️
+            const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`;
+            const gradeKey = `${groupCode}_${subject.code}_GdC`;
             subjectRow[`${groupCode}_total`] = studentData[totalMarksKey] || '-';
             subjectRow[`${groupCode}_grade`] = studentData[gradeKey] || '-';
         }
@@ -107,6 +101,7 @@ function transformStudentDataForCarbone(studentData, config) {
 
 
 async function GenerateOdtFile() {
+    // This entire function remains the same
     let outputDir = '';
     const jobId = process.env.JOB_ID;
 
