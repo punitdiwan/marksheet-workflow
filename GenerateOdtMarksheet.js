@@ -60,30 +60,39 @@ function transformStudentDataForCarbone(studentData, config) {
     const grandTotals = {};
 
     for (const subject of config.subjects) {
-        const subjectRow = { name: subject.sub_name };
+        const subjectRow = {
+            name: subject.sub_name
+        };
 
         for (const group of config.examGroups) {
-            const groupCode = group.group_code;
+            const groupCode = group.group_code; // e.g., "hy"
+
             const examsInGroup = config.exams.filter(
-                ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid
+                exam =>
+                    exam.examgroups === group._uid &&
+                    exam.subjects._uid === subject._uid
             );
 
             for (const exam of examsInGroup) {
-                const examCode = exam.exam_code.toLowerCase(); // "PT", "IA", etc. -> "pt", "ia"
-                const normalizedKey = `${groupCode}_${examCode}`; // e.g., "hy_pt"
-                const originalKey = `${groupCode}_${subject.code}_${exam.exam_code}`; // e.g., "hy_1_pt"
+                const examCode = exam.exam_code.toLowerCase(); // e.g., "pt", "ia", "m"
+                const simplifiedKey = `${groupCode}_${examCode}`; // e.g., "hy_pt"
+                const originalKey = `${groupCode}_${subject.code}_${exam.exam_code}`; // e.g., "hy_1_PT"
                 const mark = studentData[originalKey] || '-';
 
-                subjectRow[normalizedKey] = mark;
 
-                // Total for each exam (across subjects)
+
+                if (!subjectRow[simplifiedKey]) {
+                    subjectRow[simplifiedKey] = mark;
+                }
+
+                // Aggregate grand totals per exam type across subjects
                 const totalKey = `${groupCode}_${exam.exam_code}_total`;
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
             }
 
-            // Add total marks and grade per subject for group
-            const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`;
-            const gradeKey = `${groupCode}_${subject.code}_GdC`;
+            // Add total marks and grade for the subject
+            const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`; // e.g., "hy_1_Ob_MarksC"
+            const gradeKey = `${groupCode}_${subject.code}_GdC`; // e.g., "hy_1_GdC"
 
             subjectRow[`${groupCode}_total`] = studentData[totalMarksKey] || '-';
             subjectRow[`${groupCode}_grade`] = studentData[gradeKey] || '-';
@@ -92,6 +101,7 @@ function transformStudentDataForCarbone(studentData, config) {
         structured.subjects.push(subjectRow);
     }
 
+    // Add grand totals to root
     Object.assign(structured, grandTotals);
 
     console.log(`\n--- VERIFY THIS JSON LOG ---`);
@@ -102,6 +112,7 @@ function transformStudentDataForCarbone(studentData, config) {
 
     return structured;
 }
+
 
 async function GenerateOdtFile() {
     // This function is correct and does not need any more changes.
