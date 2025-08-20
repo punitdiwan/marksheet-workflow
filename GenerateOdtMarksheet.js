@@ -64,22 +64,31 @@ function transformStudentDataForCarbone(studentData, config) {
 
         for (const group of config.examGroups) {
             const groupCode = group.group_code;
-            const examsInGroup = config.exams.filter(ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid);
+            const examsInGroup = config.exams.filter(
+                ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid
+            );
 
             for (const exam of examsInGroup) {
-                const examCode = exam.exam_code.toLowerCase(); // e.g., "pt", "ia", "M"
+                const examCode = exam.exam_code.toLowerCase(); // "PT", "IA", etc. -> "pt", "ia"
                 const normalizedKey = `${groupCode}_${examCode}`; // e.g., "hy_pt"
-                const mark = studentData[`${groupCode}_${subject.code}_${exam.exam_code}`] || '-';
+                const originalKey = `${groupCode}_${subject.code}_${exam.exam_code}`; // e.g., "hy_1_pt"
+                const mark = studentData[originalKey] || '-';
+
                 subjectRow[normalizedKey] = mark;
 
+                // Total for each exam (across subjects)
                 const totalKey = `${groupCode}_${exam.exam_code}_total`;
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
             }
+
+            // Add total marks and grade per subject for group
             const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`;
             const gradeKey = `${groupCode}_${subject.code}_GdC`;
+
             subjectRow[`${groupCode}_total`] = studentData[totalMarksKey] || '-';
             subjectRow[`${groupCode}_grade`] = studentData[gradeKey] || '-';
         }
+
         structured.subjects.push(subjectRow);
     }
 
@@ -87,7 +96,7 @@ function transformStudentDataForCarbone(studentData, config) {
 
     console.log(`\n--- VERIFY THIS JSON LOG ---`);
     console.log(`Data for student: ${studentData.full_name || 'N/A'}`);
-    console.log(`The 'subjects' array below should now have SIMPLE keys like "hy_pt", "hy_ia", etc.`);
+    console.log(`The 'subjects' array below should now have keys like "hy_pt", "hy_ia", etc.`);
     console.log(JSON.stringify(structured.subjects, null, 2));
     console.log(`--------------------------\n`);
 
