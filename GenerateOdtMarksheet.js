@@ -1,5 +1,5 @@
 // =================================================================
-//          GenerateOdtMarksheet.js (Final Version with Key Logging)
+//          GenerateOdtMarksheet.js (The Final Definitive Version)
 // =================================================================
 
 const fs = require('fs');
@@ -57,10 +57,9 @@ async function fetchMarksheetConfig(groupIds) {
 function transformStudentDataForCarbone(studentData, config) {
     const structured = { ...studentData, subjects: [] };
     const grandTotals = {};
-    const templateKeys = new Set();
 
     for (const subject of config.subjects) {
-        const subjectRow = { name: subject.sub_name };
+        const subjectRow = { name: subject.sub_name, code: subject.code };
 
         for (const group of config.examGroups) {
             const groupCode = group.group_code;
@@ -69,21 +68,12 @@ function transformStudentDataForCarbone(studentData, config) {
             for (const exam of examsInGroup) {
                 const dataKey = `${groupCode}_${subject.code}_${exam.exam_code}`;
                 const mark = studentData[dataKey] || '-';
-
-                // THIS IS THE CORRECTED LOGIC
-                const genericKey = `${groupCode}_${exam.exam_code}`;
-                subjectRow[genericKey] = mark;
-                templateKeys.add(genericKey); // Add the generic key to our set
-
-                const totalKey = `${groupCode}_${exam.exam_code}_total`;
-                grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
+                subjectRow[dataKey] = mark; // Add the specific key like "hy_1_pt" to the subject object
             }
             const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`;
             const gradeKey = `${groupCode}_${subject.code}_GdC`;
             subjectRow[`${groupCode}_total`] = studentData[totalMarksKey] || '-';
             subjectRow[`${groupCode}_grade`] = studentData[gradeKey] || '-';
-            templateKeys.add(`${groupCode}_total`);
-            templateKeys.add(`${groupCode}_grade`);
         }
         structured.subjects.push(subjectRow);
     }
