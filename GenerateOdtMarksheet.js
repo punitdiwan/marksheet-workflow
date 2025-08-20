@@ -1,3 +1,7 @@
+// =================================================================
+//          GenerateOdtMarksheet.js (The Final Correct Version)
+// =================================================================
+
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
@@ -11,6 +15,7 @@ require('dotenv').config();
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
 
+// --- START: HARDCODE YOUR SECRETS HERE FOR TESTING ---
 // --- START: HARDCODE YOUR SECRETS HERE FOR TESTING ---
 // ⚠️ Replace with your actual Supabase URL and Service Key
 // const supabaseUrl = process.env.SUPABASE_URL;
@@ -26,24 +31,19 @@ if (!schemaName) {
 }
 
 console.log(`✅ Initializing Supabase client for schema: "${schemaName}"`);
+
 const supabase = createClient(supabaseUrl, supabaseKey, {
-    db: { schema: schemaName },
+    db: {
+        schema: schemaName,
+    },
 });
 
 async function fetchMarksheetConfig(groupIds) {
     console.log(`Fetching config for groups: ${groupIds}`);
-    const { data: examGroups, error: groupsError } = await supabase
-        .from('exam_groups')
-        .select('_uid, group_code, name')
-        .in('_uid', groupIds);
+    const { data: examGroups, error: groupsError } = await supabase.from('exam_groups').select('_uid, group_code, name').in('_uid', groupIds);
     if (groupsError) throw new Error(`Error fetching exam groups: ${groupsError.message}`);
-
-    const { data: exams, error: examsError } = await supabase
-        .from('cce_exams')
-        .select('exam_code, name, examgroups, subjects!inner(_uid, sub_name, code)')
-        .in('examgroups', groupIds);
+    const { data: exams, error: examsError } = await supabase.from('cce_exams').select('exam_code, name, examgroups, subjects!inner(_uid, sub_name, code)').in('examgroups', groupIds);
     if (examsError) throw new Error(`Error fetching exams: ${examsError.message}`);
-
     const subjectsMap = new Map();
     exams.forEach(exam => {
         if (exam.subjects && !subjectsMap.has(exam.subjects._uid)) {
@@ -59,47 +59,52 @@ function transformStudentDataForCarbone(studentData, config) {
     const structured = { ...studentData, subjects: [] };
     const grandTotals = {};
 
-    // Flatten marks for Carbone template (e.g., hy_pt, hy_ia, hy_M)
     for (const subject of config.subjects) {
         const subjectRow = { name: subject.sub_name };
+
         for (const group of config.examGroups) {
             const groupCode = group.group_code;
             const examsInGroup = config.exams.filter(
                 ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid
             );
+
             for (const exam of examsInGroup) {
-                const dataKey = `${groupCode}_${subject.code}_${exam.exam_code}`;
-                const mark = studentData[dataKey] || '-';
-                const genericKey = `${groupCode}_${exam.exam_code}`;
-                // Add marks to root level for direct access in template
-                structured[genericKey] = mark;
-                subjectRow[genericKey] = mark; // Keep in subjects array for iteration
+                const examCode = exam.exam_code.toLowerCase(); // "PT", "IA", etc. -> "pt", "ia"
+                const normalizedKey = `${groupCode}_${examCode}`; // e.g., "hy_pt"
+                const originalKey = `${groupCode}_${subject.code}_${exam.exam_code}`; // e.g., "hy_1_pt"
+                const mark = studentData[originalKey] || '-';
+
+                subjectRow[normalizedKey] = mark;
+
+                // Total for each exam (across subjects)
                 const totalKey = `${groupCode}_${exam.exam_code}_total`;
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
             }
+
+            // Add total marks and grade per subject for group
             const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`;
             const gradeKey = `${groupCode}_${subject.code}_GdC`;
+
             subjectRow[`${groupCode}_total`] = studentData[totalMarksKey] || '-';
             subjectRow[`${groupCode}_grade`] = studentData[gradeKey] || '-';
-            // Add total and grade to root level as well
-            structured[`${groupCode}_total`] = studentData[totalMarksKey] || '-';
-            structured[`${groupCode}_grade`] = studentData[gradeKey] || '-';
         }
+
         structured.subjects.push(subjectRow);
     }
 
     Object.assign(structured, grandTotals);
 
-    console.log('\n--- VERIFY THIS JSON LOG ---');
+    console.log(`\n--- VERIFY THIS JSON LOG ---`);
     console.log(`Data for student: ${studentData.full_name || 'N/A'}`);
-    console.log(`The 'subjects' array below should now have SIMPLE keys like "hy_pt", "hy_ia", etc., and marks should be accessible at root level (d.hy_pt, etc.)`);
-    console.log(JSON.stringify(structured, null, 2));
-    console.log('--------------------------\n');
+    console.log(`The 'subjects' array below should now have keys like "hy_pt", "hy_ia", etc.`);
+    console.log(JSON.stringify(structured.subjects, null, 2));
+    console.log(`--------------------------\n`);
 
     return structured;
 }
 
 async function GenerateOdtFile() {
+    // This function is correct and does not need any more changes.
     let outputDir = '';
     const jobId = process.env.JOB_ID;
     try {
@@ -112,35 +117,26 @@ async function GenerateOdtFile() {
         const DIVISION_ID = process.env.DIVISION_ID;
         const templateUrl = process.env.TEMPLATE_URL;
         const groupIds = groupid?.split(",");
+
         if (!templateUrl || !schoolId || !batchId || !jobId || !courseId || !groupIds) {
             throw new Error('Missing required environment variables from GitHub Actions inputs.');
         }
-
         const marksheetConfig = await fetchMarksheetConfig(groupIds);
         if (!marksheetConfig.subjects || marksheetConfig.subjects.length === 0) {
             console.warn("Warning: No subjects found for this course. Marksheets may be empty.");
         }
-
         outputDir = path.join(process.cwd(), 'output');
         await fs.promises.mkdir(outputDir, { recursive: true });
         const pdfPaths = [];
-
         const marksPayload = {
             _school: schoolId,
             batchId: [batchId],
             group: groupIds,
-            "currentdata": {
-                "division_id": DIVISION_ID,
-                "ranking_id": RANKING_ID
-            }
+            "currentdata": { "division_id": DIVISION_ID, "ranking_id": RANKING_ID }
         };
-
         const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(marksPayload),
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(marksPayload),
         });
-
         if (!studentResponse.ok) throw new Error(`Failed to fetch student data: ${await studentResponse.text()}`);
         const studentResponseJson = await studentResponse.json();
         const students = studentResponseJson.students || studentResponseJson.data || [];
@@ -149,14 +145,12 @@ async function GenerateOdtFile() {
             await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No students found." });
             return;
         }
-
         console.log(`Generating marksheets for ${students.length} students...`);
         console.log("Downloading template from URL...");
         const templateBuffer = await downloadFile(templateUrl);
         const templatePath = path.join(outputDir, 'template.odt');
         await fs.promises.writeFile(templatePath, templateBuffer);
         console.log(`Template saved locally to: ${templatePath}`);
-
         for (const student of students) {
             console.log(`Processing student: ${student.full_name}`);
             const transformedData = transformStudentDataForCarbone(student, marksheetConfig);
@@ -167,7 +161,6 @@ async function GenerateOdtFile() {
             const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
             pdfPaths.push(pdfPath);
         }
-
         const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
         if (pdfPaths.length > 0) {
             await mergePdfs(pdfPaths, mergedPdfPath);
@@ -176,42 +169,39 @@ async function GenerateOdtFile() {
             const formData = new FormData();
             formData.append('photo', fileBuffer, {
                 filename: 'merged_output.pdf',
-                contentType: 'application/pdf'
+                contentType: 'application/pdf',
             });
             formData.append('key', filePath);
             formData.append('ContentType', 'application/pdf');
             formData.append('jobId', jobId);
-
             console.log(`Uploading merged PDF via API to path: ${filePath}`);
             const uploadRes = await fetch('https://demoschool.edusparsh.com/api/uploadfileToDigitalOcean', {
                 method: 'POST',
                 headers: formData.getHeaders(),
                 body: formData,
             });
-
             if (!uploadRes.ok) {
                 const errorData = await uploadRes.text();
                 throw new Error(`File upload API failed: ${errorData || uploadRes.statusText}`);
             }
-
             console.log("File uploaded successfully. Updating job_history table via API...");
             await updateJobHistory(jobId, schoolId, { file_path: filePath, status: true });
             console.log('Job_history updated successfully.');
         } else {
             console.log('No PDFs were generated to merge.');
         }
-
         console.log("✅ Marksheets generated and uploaded successfully.");
     } catch (error) {
         console.error('❌ FATAL ERROR during marksheet generation:', error);
         if (jobId) {
-            await updateJobHistory(jobId, schemaName, { status: false, notes: `Failed: ${error.message.substring(0, 500)}` });
+            await updateJobHistory(jobId, schemaName, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
         process.exit(1);
     }
 }
 
 // --- UTILITY FUNCTIONS ---
+
 async function updateJobHistory(jobId, schoolId, payload) {
     try {
         const jobUpdatePayload = {
