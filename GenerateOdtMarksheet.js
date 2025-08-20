@@ -1,5 +1,5 @@
 // =================================================================
-//          GenerateOdtMarksheet.js (Complete Script)
+//          GenerateOdtMarksheet.js (Complete Script with Logging)
 // =================================================================
 
 const fs = require('fs');
@@ -23,29 +23,20 @@ const supabaseUrl = "https://studio.maitretech.com";
 const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q";
 // --- END: HARDCODE YOUR SECRETS HERE ---
 
-// Get the dynamic schema name from the environment variables provided by the workflow
 const schemaName = process.env.SCHOOL_ID;
 
-// CRITICAL: Check if the schema name is provided.
 if (!schemaName) {
     throw new Error("FATAL: SCHOOL_ID (which is used as the schema name) is not defined in environment variables.");
 }
 
 console.log(`✅ Initializing Supabase client for schema: "${schemaName}"`);
 
-// Initialize Supabase Client with the dynamic schema
 const supabase = createClient(supabaseUrl, supabaseKey, {
     db: {
         schema: schemaName,
     },
 });
 
-
-/**
- * Fetches the dynamic configuration (subjects, exams) for a marksheet.
- * @param {string[]} groupIds - Array of exam group UUIDs.
- * @returns {Promise<object>} - A configuration object.
- */
 async function fetchMarksheetConfig(groupIds) {
     console.log(`Fetching config for groups: ${groupIds}`);
 
@@ -73,12 +64,6 @@ async function fetchMarksheetConfig(groupIds) {
     return { examGroups, exams, subjects };
 }
 
-/**
- * Transforms flat student data into a structured format for Carbone.
- * @param {object} studentData - The flat data for one student from your API.
- * @param {object} config - The configuration fetched by fetchMarksheetConfig.
- * @returns {object} - Structured data ready for Carbone.
- */
 function transformStudentDataForCarbone(studentData, config) {
     const structured = { ...studentData, subjects: [] };
     const grandTotals = {};
@@ -106,6 +91,18 @@ function transformStudentDataForCarbone(studentData, config) {
     }
 
     Object.assign(structured, grandTotals);
+
+    // ⬇️ --- START: ADDED LOGGING FOR DEBUGGING --- ⬇️
+    console.log(`\n---------------------------------------------------`);
+    console.log(`TRANSFORMED DATA FOR STUDENT: ${studentData.full_name || 'N/A'}`);
+    console.log(`---------------------------------------------------`);
+    console.log(`>>> Top-Level Keys Available:`);
+    console.log(Object.keys(structured));
+    console.log(`\n>>> Full Data Object (JSON):`);
+    console.log(JSON.stringify(structured, null, 2)); // Pretty-prints the JSON object
+    console.log(`---------------------------------------------------\n`);
+    // ⬆️ --- END: ADDED LOGGING FOR DEBUGGING --- ⬆️
+
     return structured;
 }
 
@@ -155,7 +152,6 @@ async function GenerateOdtFile() {
         const students = studentResponseJson.students || studentResponseJson.data || [];
         if (!Array.isArray(students) || students.length === 0) {
             console.warn("Warning: No students found. Exiting gracefully.");
-
             await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No students found." });
             return;
         }
@@ -180,7 +176,6 @@ async function GenerateOdtFile() {
             pdfPaths.push(pdfPath);
         }
 
-        // --- FINAL UPLOAD AND JOB UPDATE LOGIC ---
         const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
 
         if (pdfPaths.length > 0) {
@@ -231,9 +226,6 @@ async function GenerateOdtFile() {
 
 // --- UTILITY FUNCTIONS ---
 
-/**
- * Helper function to update the job history via your API.
- */
 async function updateJobHistory(jobId, schoolId, payload) {
     try {
         const jobUpdatePayload = {
