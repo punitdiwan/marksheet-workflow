@@ -76,12 +76,16 @@ function transformStudentDataForCarbone(studentData, config) {
             const examsInGroup = config.exams.filter(ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid);
 
             for (const exam of examsInGroup) {
-                const dataKey = `${groupCode}_${subject.code}_${exam.exam_code}`;
+                const dataKey = `${String(groupCode).trim()}_${String(subject.code).trim()}_${String(exam.exam_code).trim()}`;
+
                 const mark = studentData[dataKey] || '-';
-                subjectRow[`${groupCode}_${exam.exam_code}`] = mark;
+
+                subjectRow[dataKey] = mark;
+
                 const totalKey = `${groupCode}_${exam.exam_code}_total`;
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
             }
+
             const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`;
             const gradeKey = `${groupCode}_${subject.code}_GdC`;
             subjectRow[`${groupCode}_total`] = studentData[totalMarksKey] || '-';
@@ -92,16 +96,14 @@ function transformStudentDataForCarbone(studentData, config) {
 
     Object.assign(structured, grandTotals);
 
-    // ⬇️ --- START: ADDED LOGGING FOR DEBUGGING --- ⬇️
     console.log(`\n---------------------------------------------------`);
     console.log(`TRANSFORMED DATA FOR STUDENT: ${studentData.full_name || 'N/A'}`);
     console.log(`---------------------------------------------------`);
     console.log(`>>> Top-Level Keys Available:`);
     console.log(Object.keys(structured));
     console.log(`\n>>> Full Data Object (JSON):`);
-    console.log(JSON.stringify(structured, null, 2)); // Pretty-prints the JSON object
+    console.log(JSON.stringify(structured, null, 2));
     console.log(`---------------------------------------------------\n`);
-    // ⬆️ --- END: ADDED LOGGING FOR DEBUGGING --- ⬆️
 
     return structured;
 }
