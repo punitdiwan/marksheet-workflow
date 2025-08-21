@@ -73,27 +73,28 @@ function transformStudentDataForCarbone(studentData, config) {
 
         for (const group of config.examGroups) {
             const groupCode = String(group.group_code).trim();
-            // Initialize an object for this group, e.g., subjectRow.groups.hy = {}
             subjectRow.groups[groupCode] = {};
 
             const examsInGroup = config.exams.filter(ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid);
 
             for (const exam of examsInGroup) {
-                const examCode = String(exam.exam_code).trim();
-                const dataKey = `${groupCode}_${String(subject.code).trim()}_${examCode}`;
+                const compositeExamCode = String(exam.exam_code).trim();
+
+                const dataKey = `${groupCode}_${compositeExamCode}`;
+
                 const mark = studentData[dataKey] || '-';
 
-                // Nest the mark under its exam code: e.g., subjectRow.groups.hy.M = 64
-                subjectRow.groups[groupCode][examCode] = mark;
+                const simpleExamCode = compositeExamCode.split('_').pop();
 
-                const totalKey = `${groupCode}_${examCode}_total`;
+                subjectRow.groups[groupCode][simpleExamCode] = mark;
+
+                const totalKey = `${dataKey}_total`;
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
             }
 
             const totalMarksKey = `${groupCode}_${String(subject.code).trim()}_Ob_MarksC`;
             const gradeKey = `${groupCode}_${String(subject.code).trim()}_GdC`;
 
-            // Nest the total and grade as well
             subjectRow.groups[groupCode].total = studentData[totalMarksKey] || '-';
             subjectRow.groups[groupCode].grade = studentData[gradeKey] || '-';
         }
@@ -102,12 +103,7 @@ function transformStudentDataForCarbone(studentData, config) {
 
     Object.assign(structured, grandTotals);
 
-    console.log(`\n---------------------------------------------------`);
-    console.log(`TRANSFORMED DATA FOR STUDENT: ${studentData.full_name || 'N/A'}`);
-    console.log(`---------------------------------------------------`);
-    console.log(`>>> Top-Level Keys Available:`);
-    console.log(Object.keys(structured));
-    console.log(`\n>>> Full Data Object (JSON):`);
+    console.log(`\n--- TRANSFORMED DATA FOR: ${studentData.full_name || 'N/A'} ---`);
     console.log(JSON.stringify(structured, null, 2));
     console.log(`---------------------------------------------------\n`);
 
