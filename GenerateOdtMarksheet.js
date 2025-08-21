@@ -69,27 +69,33 @@ function transformStudentDataForCarbone(studentData, config) {
     const grandTotals = {};
 
     for (const subject of config.subjects) {
-        const subjectRow = { name: subject.sub_name };
+        const subjectRow = { name: subject.sub_name, groups: {} };
 
         for (const group of config.examGroups) {
-            const groupCode = group.group_code;
+            const groupCode = String(group.group_code).trim();
+            // Initialize an object for this group, e.g., subjectRow.groups.hy = {}
+            subjectRow.groups[groupCode] = {};
+
             const examsInGroup = config.exams.filter(ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid);
 
             for (const exam of examsInGroup) {
-                const dataKey = `${String(groupCode).trim()}_${String(subject.code).trim()}_${String(exam.exam_code).trim()}`;
-
+                const examCode = String(exam.exam_code).trim();
+                const dataKey = `${groupCode}_${String(subject.code).trim()}_${examCode}`;
                 const mark = studentData[dataKey] || '-';
 
-                subjectRow[dataKey] = mark;
+                // Nest the mark under its exam code: e.g., subjectRow.groups.hy.M = 64
+                subjectRow.groups[groupCode][examCode] = mark;
 
-                const totalKey = `${groupCode}_${exam.exam_code}_total`;
+                const totalKey = `${groupCode}_${examCode}_total`;
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
             }
 
-            const totalMarksKey = `${groupCode}_${subject.code}_Ob_MarksC`;
-            const gradeKey = `${groupCode}_${subject.code}_GdC`;
-            subjectRow[`${groupCode}_total`] = studentData[totalMarksKey] || '-';
-            subjectRow[`${groupCode}_grade`] = studentData[gradeKey] || '-';
+            const totalMarksKey = `${groupCode}_${String(subject.code).trim()}_Ob_MarksC`;
+            const gradeKey = `${groupCode}_${String(subject.code).trim()}_GdC`;
+
+            // Nest the total and grade as well
+            subjectRow.groups[groupCode].total = studentData[totalMarksKey] || '-';
+            subjectRow.groups[groupCode].grade = studentData[gradeKey] || '-';
         }
         structured.subjects.push(subjectRow);
     }
