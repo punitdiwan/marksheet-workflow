@@ -8,6 +8,7 @@ const { exec } = require('child_process');
 const util = require('util');
 const fetch = require('node-fetch');
 const carbone = require('carbone');
+carbone.set({ cache: false }); // ADD THIS LINE
 const { createClient } = require('@supabase/supabase-js');
 const FormData = require('form-data');
 require('dotenv').config();
