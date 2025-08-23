@@ -89,7 +89,7 @@ function transformStudentDataForCarbone(studentData, config) {
                 subjectRow.groups[groupCode][simpleExamCode] = mark;
 
                 const totalKey = `${dataKey}_total`;
-                // ✅ Safe number conversion
+
                 let numericMark = Number(mark);
                 if (isNaN(numericMark)) {
                     numericMark = 0;
@@ -104,13 +104,26 @@ function transformStudentDataForCarbone(studentData, config) {
             subjectRow.groups[groupCode].total = studentData[totalMarksKey] || '-';
             subjectRow.groups[groupCode].grade = studentData[gradeKey] || '-';
         }
+
+        // Calculate the grand total by summing the totals of each group (hy, fe, etc.)
+        const subjectGrandTotal = Object.values(subjectRow.groups).reduce((sum, group) => {
+            // Ensure we are adding numbers, default to 0 if a total is not a valid number
+            return sum + (Number(group.total) || 0);
+        }, 0);
+
+        // Construct the key to find the pre-calculated grand grade from the student data
+        const grandGradeKey = `grand_${String(subject.code).trim()}_gd`;
+
+        subjectRow.grandTotal = subjectGrandTotal;
+        subjectRow.grandGrade = studentData[grandGradeKey] || '-';
+
         structured.subjects.push(subjectRow);
     }
 
     Object.assign(structured, grandTotals);
 
     console.log(`\n--- TRANSFORMED DATA FOR: ${studentData.full_name || 'N/A'} ---`);
-    console.log(JSON.stringify(structured, null, 2));
+    console.log(JSON.stringify(structured.subjects, null, 2));
     console.log(`---------------------------------------------------\n`);
 
     return structured;
