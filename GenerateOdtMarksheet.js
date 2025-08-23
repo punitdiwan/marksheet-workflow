@@ -8,13 +8,12 @@ const { exec } = require('child_process');
 const util = require('util');
 const fetch = require('node-fetch');
 const carbone = require('carbone');
-carbone.set({ cache: false }); // ADD THIS LINE
 const { createClient } = require('@supabase/supabase-js');
 const FormData = require('form-data');
 require('dotenv').config();
 
 const execPromise = util.promisify(exec);
-// const carboneRender = util.promisify(carbone.render);
+const carboneRender = util.promisify(carbone.render);
 
 // --- START: HARDCODE YOUR SECRETS HERE FOR TESTING ---
 // ⚠️ Replace with your actual Supabase URL and Service Key
@@ -171,15 +170,7 @@ async function GenerateOdtFile() {
         for (const student of students) {
             console.log(`Processing student: ${student.full_name}`);
             const transformedData = transformStudentDataForCarbone(student, marksheetConfig);
-            // const odtReport = await carboneRender(templatePath, transformedData, {});
-            const odtReport = await new Promise((resolve, reject) => {
-                carbone.render(templatePath, transformedData, {}, (err, result) => {
-                    if (err) {
-                        return reject(err);
-                    }
-                    resolve(result);
-                });
-            });
+            const odtReport = await carboneRender(templatePath, transformedData);
 
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
