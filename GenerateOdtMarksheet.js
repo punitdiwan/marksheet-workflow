@@ -123,7 +123,7 @@ function transformStudentDataForCarbone(studentData, config) {
     Object.assign(structured, grandTotals);
 
     console.log(`\n--- TRANSFORMED DATA FOR: ${studentData.full_name || 'N/A'} ---`);
-    console.log(JSON.stringify(structured.subjects, null, 2));
+    console.log(JSON.stringify(structured, null, 2));
     console.log(`---------------------------------------------------\n`);
 
     return structured;
