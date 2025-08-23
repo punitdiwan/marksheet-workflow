@@ -19,8 +19,8 @@ const carboneRender = util.promisify(carbone.render);
 // ⚠️ Replace with your actual Supabase URL and Service Key
 // const supabaseUrl = process.env.SUPABASE_URL;
 // const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-const supabaseUrl = "https://studio.maitretech.com";
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q";
+const supabaseUrl = "";
+const supabaseKey = "";
 // --- END: HARDCODE YOUR SECRETS HERE ---
 
 const schemaName = process.env.SCHOOL_ID;
@@ -89,7 +89,13 @@ function transformStudentDataForCarbone(studentData, config) {
                 subjectRow.groups[groupCode][simpleExamCode] = mark;
 
                 const totalKey = `${dataKey}_total`;
-                grandTotals[totalKey] = (grandTotals[totalKey] || 0) + (parseFloat(mark) || 0);
+                // ✅ Safe number conversion
+                let numericMark = Number(mark);
+                if (isNaN(numericMark)) {
+                    numericMark = 0;
+                }
+
+                grandTotals[totalKey] = (grandTotals[totalKey] || 0) + numericMark;
             }
 
             const totalMarksKey = `${groupCode}_${String(subject.code).trim()}_Ob_MarksC`;
