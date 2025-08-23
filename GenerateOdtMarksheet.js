@@ -170,7 +170,7 @@ async function GenerateOdtFile() {
         for (const student of students) {
             console.log(`Processing student: ${student.full_name}`);
             const transformedData = transformStudentDataForCarbone(student, marksheetConfig);
-            const odtReport = await carboneRender(templatePath, transformedData);
+            const odtReport = await carboneRender(templatePath, transformedData, {});
 
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
