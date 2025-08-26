@@ -62,64 +62,62 @@ async function fetchMarksheetConfig(groupIds) {
 }
 
 function transformStudentDataForCarbone(studentData, config) {
-    const structured = { ...studentData };
-
-    const termKeys = {};
-    config.examGroups.forEach(group => {
-        const cleanKey = String(group.name).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
-        termKeys[group._uid] = cleanKey;
-
-        structured[cleanKey] = {
-            name: group.name,
-            subjects: [],
-
-            grandTotal: studentData[`${group.group_code}_Grand_Total`] || '-',
-            percentage: studentData[`${group.group_code}_Percentage`] || '-',
-            grade: studentData[`${group.group_code}_Grade`] || '-',
-            rank: studentData[`${group.group_code}_Rank`] || '-'
-        };
-    });
+    const structured = { ...studentData, subjects: [] };
+    const grandTotals = {};
 
     for (const subject of config.subjects) {
+        const subjectRow = { name: subject.sub_name, groups: {} };
 
         for (const group of config.examGroups) {
             const groupCode = String(group.group_code).trim();
-            const subjectCode = String(subject.code).trim();
-            const termKey = termKeys[group._uid]; // Get the clean key (e.g., 'termi')
-
-            const subjectRow = { name: subject.sub_name };
-
+            subjectRow.groups[groupCode] = {};
 
             const examsInGroup = config.exams.filter(ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid);
 
             for (const exam of examsInGroup) {
                 const compositeExamCode = String(exam.exam_code).trim();
 
-
                 const dataKey = `${groupCode}_${compositeExamCode}`;
+
                 const mark = studentData[dataKey] || '-';
 
-                // We assume the `exam_code` in the DB is already a simple, clean key like 'pt', 'ma', 'hy' etc.
-                const simpleExamCode = compositeExamCode.split('_').pop().toLowerCase();
+                const simpleExamCode = compositeExamCode.split('_').pop();
 
-                subjectRow[simpleExamCode] = mark;
+                subjectRow.groups[groupCode][simpleExamCode] = mark;
+
+                const totalKey = `${dataKey}_total`;
+
+                let numericMark = Number(mark);
+                if (isNaN(numericMark)) {
+                    numericMark = 0;
+                }
+
+                grandTotals[totalKey] = (grandTotals[totalKey] || 0) + numericMark;
             }
 
-            // --- Step 3: Add Term-Specific Totals and Grades for the Subject ---
-            // These are the calculated totals per subject, per term.
-            const totalMarksKey = `${groupCode}_${subjectCode}_Ob_MarksC`;
-            const gradeKey = `${groupCode}_${subjectCode}_GdC`;
+            const totalMarksKey = `${groupCode}_${String(subject.code).trim()}_Ob_MarksC`;
+            const gradeKey = `${groupCode}_${String(subject.code).trim()}_GdC`;
 
-            subjectRow.total = studentData[totalMarksKey] || '-';
-            subjectRow.grade = studentData[gradeKey] || '-';
-
-            if (structured[termKey]) {
-                structured[termKey].subjects.push(subjectRow);
-            }
+            subjectRow.groups[groupCode].total = studentData[totalMarksKey] || '-';
+            subjectRow.groups[groupCode].grade = studentData[gradeKey] || '-';
         }
+
+        // Calculate the grand total by summing the totals of each group (hy, fe, etc.)
+        const subjectGrandTotal = Object.values(subjectRow.groups).reduce((sum, group) => {
+            // Ensure we are adding numbers, default to 0 if a total is not a valid number
+            return sum + (Number(group.total) || 0);
+        }, 0);
+
+        // Construct the key to find the pre-calculated grand grade from the student data
+        const grandGradeKey = `grand_${String(subject.code).trim()}_gd`;
+
+        subjectRow.grandTotal = subjectGrandTotal;
+        subjectRow.grandGrade = studentData[grandGradeKey] || '-';
+
+        structured.subjects.push(subjectRow);
     }
 
-    delete structured.subjects;
+    Object.assign(structured, grandTotals);
 
     console.log(`\n--- TRANSFORMED DATA FOR: ${studentData.full_name || 'N/A'} ---`);
     console.log(JSON.stringify(structured, null, 2));
