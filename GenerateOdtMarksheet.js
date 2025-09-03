@@ -61,82 +61,158 @@ async function fetchMarksheetConfig(groupIds) {
     return { examGroups, exams, subjects };
 }
 
-function transformStudentDataForCarbone(studentData, config) {
-    const structured = { ...studentData, subjects: [] };
-    const grandTotals = {};
 
+/**
+ * Derives a short code (e.g., 'sc', 'en') from a subject object.
+ * This is crucial because the incoming student data uses these short codes in its keys.
+ * @param {object} subject - The subject object from the config { _uid, sub_name, code }.
+ * @returns {string} - The derived short code in lowercase.
+ */
+function getSubjectShortCode(subject) {
+    if (!subject || !subject.sub_name) return '';
+
+    const name = subject.sub_name.toLowerCase();
+    // Create a simple mapping for common subjects. You can expand this.
+    const mappings = {
+        'science': 'sc',
+        'social science': 'so',
+        'english': 'en',
+        'hindi': 'hi',
+        'maths': 'ma',
+        'mathematics': 'ma',
+        'sanskrit': 'sp',
+        'practical': 'pr',
+        'computer': 'co',
+    };
+
+    if (mappings[name]) {
+        return mappings[name];
+    }
+
+    // Fallback logic: for "Social Science", take "so". For "English", take "en".
+    const words = name.split(/\s+/);
+    if (words.length > 1) {
+        return words.map(w => w[0]).join(''); // "Social Science" -> "ss" (adjust if needed, e.g. "so")
+    }
+    return name.substring(0, 2); // "Hindi" -> "hi"
+}
+
+
+/**
+ * Transforms the flat student data from the API into a nested structure suitable for Carbone templates.
+ * @param {object} studentData - The raw data for a single student from the API.
+ * @param {object} config - The configuration object containing subjects, exams, and exam groups.
+ * @returns {object} - The structured data ready for Carbone.
+ */
+
+function transformStudentDataForCarbone(studentData, config) {
+    // Start with a copy of all top-level student properties (full_name, dob, grand_percentage, etc.)
+    const structured = { ...studentData, subjects: [] };
+
+    // This map will help us find exams by their short code (pt, ma, hy, etc.)
+    const examsByShortCode = new Map();
+    config.exams.forEach(exam => {
+        // Assumes exam_code is like 'periodic_test_pt', 'half_yearly_hy'. We want the last part.
+        const shortCode = String(exam.exam_code).trim().split('_').pop().toLowerCase();
+        if (shortCode) {
+            examsByShortCode.set(shortCode, exam);
+        }
+    });
+
+    // --- Main Transformation Logic ---
     for (const subject of config.subjects) {
-        const subjectRow = { name: subject.sub_name, groups: {} };
+        const subjectRow = {
+            name: subject.sub_name,
+            code: subject.code,
+            groups: {}
+        };
+        const subjectCode = String(subject.code).trim();
+        const subjectShortCode = getSubjectShortCode(subject); // 'sc', 'en', etc.
 
         for (const group of config.examGroups) {
             const groupCode = String(group.group_code).trim();
-            subjectRow.groups[groupCode] = {};
+            subjectRow.groups[groupCode] = {}; // Initialize the group object, e.g., groups.t10 = {}
 
+            // 1. Populate individual exam marks (pt, ma, po, se, hy, ae)
             const examsInGroup = config.exams.filter(ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid);
 
             for (const exam of examsInGroup) {
-                const compositeExamCode = String(exam.exam_code).trim();
+                const simpleExamCode = String(exam.exam_code).trim().split('_').pop().toLowerCase();
+                if (!simpleExamCode) continue;
 
-                const dataKey = `${groupCode}_${compositeExamCode}`;
+                // The key in studentData is constructed like: {groupCode}_{subjectCode}_{examCode}
+                // Example: 't10_4_hy'
+                const dataKey = `${groupCode}_${subjectCode}_${simpleExamCode}`;
+                const mark = studentData[dataKey];
 
-                // Debugging: Check if key exists
-                if (!studentData.hasOwnProperty(dataKey)) {
-                    console.warn(`Warning: Data key "${dataKey}" not found in student data for subject ${subject.sub_name}, group ${groupCode}`);
-                }
-
-                const mark = studentData[dataKey] || '-';
-
-                const simpleExamCode = compositeExamCode.split('_').pop();
-
-                subjectRow.groups[groupCode][simpleExamCode] = mark;
-
-                const totalKey = `${dataKey}_total`;
-
-                let numericMark = Number(mark);
-                if (isNaN(numericMark)) {
-                    numericMark = 0;
-                }
-
-                grandTotals[totalKey] = (grandTotals[totalKey] || 0) + numericMark;
-            }
-
-            // Total and grade with fallback to name-based key if code-based misses
-            let totalMarksKey = `${groupCode}_${String(subject.code).trim()}_Ob_MarksC`;
-            if (!studentData.hasOwnProperty(totalMarksKey)) {
-                totalMarksKey = `${groupCode}_${subject.sub_name.toLowerCase()}_Ob_Marks`;
-                if (!studentData.hasOwnProperty(totalMarksKey)) {
-                    console.warn(`Warning: Total key "${totalMarksKey}" (or code variant) not found for subject ${subject.sub_name}, group ${groupCode}`);
+                if (mark !== undefined) {
+                    subjectRow.groups[groupCode][simpleExamCode] = mark;
+                } else {
+                    subjectRow.groups[groupCode][simpleExamCode] = '-'; // Default value if not found
+                    // console.warn(`Key not found: ${dataKey} for ${subject.sub_name}`);
                 }
             }
 
-            let gradeKey = `${groupCode}_${String(subject.code).trim()}_GdC`;
-            if (!studentData.hasOwnProperty(gradeKey)) {
-                gradeKey = `${groupCode}_${subject.sub_name.toLowerCase()}_Gd`;
-                if (!studentData.hasOwnProperty(gradeKey)) {
-                    console.warn(`Warning: Grade key "${gradeKey}" (or code variant) not found for subject ${subject.sub_name}, group ${groupCode}`);
+            // 2. Find the total and grade for the subject within this group (e.g., Term 1 Total)
+            // The API uses multiple key formats, so we check for all of them.
+            const totalKeyPatterns = [
+                `${groupCode}_${subjectCode}_Ob_MarksC`, // e.g., t10_4_Ob_MarksC
+                `${groupCode}_${subjectShortCode}_Ob_Marks` // e.g., t1b_sc_Ob_Marks
+            ];
+            const gradeKeyPatterns = [
+                `${groupCode}_${subjectCode}_GdC`, // e.g., t10_4_GdC
+                `${groupCode}_${subjectShortCode}_Gd` // e.g., t1b_sc_Gd
+            ];
+
+            let groupTotal = '-';
+            for (const key of totalKeyPatterns) {
+                if (studentData[key] !== undefined) {
+                    groupTotal = studentData[key];
+                    break;
                 }
             }
 
-            subjectRow.groups[groupCode].total = studentData[totalMarksKey] || '-';
-            subjectRow.groups[groupCode].grade = studentData[gradeKey] || '-';
+            let groupGrade = '-';
+            for (const key of gradeKeyPatterns) {
+                if (studentData[key] !== undefined) {
+                    groupGrade = studentData[key];
+                    break;
+                }
+            }
+            subjectRow.groups[groupCode].total = groupTotal;
+            subjectRow.groups[groupCode].grade = groupGrade;
         }
 
-        // Calculate the grand total by summing the totals of each group (hy, fe, etc.)
-        const subjectGrandTotal = Object.values(subjectRow.groups).reduce((sum, group) => {
-            // Ensure we are adding numbers, default to 0 if a total is not a valid number
-            return sum + (Number(group.total) || 0);
-        }, 0);
+        // 3. Find the Grand Total and Grand Grade for the subject across all terms
+        const grandTotalKeyPatterns = [
+            `grand_${subjectCode}_Marks`,
+            `grand_${subjectShortCode}_Marks` // e.g., grand_sc_Marks
+        ];
+        const grandGradeKeyPatterns = [
+            `grand_${subjectCode}_gd`,
+            `grand_${subjectShortCode}_gd` // e.g., grand_sc_gd
+        ];
 
-        // Construct the key to find the pre-calculated grand grade from the student data
-        const grandGradeKey = `grand_${String(subject.code).trim()}_gd`;
+        let grandTotal = '-';
+        for (const key of grandTotalKeyPatterns) {
+            if (studentData[key] !== undefined) {
+                grandTotal = studentData[key];
+                break;
+            }
+        }
 
-        subjectRow.grandTotal = subjectGrandTotal;
-        subjectRow.grandGrade = studentData[grandGradeKey] || '-';
+        let grandGrade = '-';
+        for (const key of grandGradeKeyPatterns) {
+            if (studentData[key] !== undefined) {
+                grandGrade = studentData[key];
+                break;
+            }
+        }
+        subjectRow.grandTotal = grandTotal;
+        subjectRow.grandGrade = grandGrade;
 
         structured.subjects.push(subjectRow);
     }
-
-    Object.assign(structured, grandTotals);
 
     console.log(`\n--- TRANSFORMED DATA FOR: ${studentData.full_name || 'N/A'} ---`);
     console.log(JSON.stringify(structured, null, 2));
