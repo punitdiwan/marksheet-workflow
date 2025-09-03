@@ -79,6 +79,11 @@ function transformStudentDataForCarbone(studentData, config) {
 
                 const dataKey = `${groupCode}_${compositeExamCode}`;
 
+                // Debugging: Check if key exists
+                if (!studentData.hasOwnProperty(dataKey)) {
+                    console.warn(`Warning: Data key "${dataKey}" not found in student data for subject ${subject.sub_name}, group ${groupCode}`);
+                }
+
                 const mark = studentData[dataKey] || '-';
 
                 const simpleExamCode = compositeExamCode.split('_').pop();
@@ -95,8 +100,22 @@ function transformStudentDataForCarbone(studentData, config) {
                 grandTotals[totalKey] = (grandTotals[totalKey] || 0) + numericMark;
             }
 
-            const totalMarksKey = `${groupCode}_${String(subject.code).trim()}_Ob_MarksC`;
-            const gradeKey = `${groupCode}_${String(subject.code).trim()}_GdC`;
+            // Total and grade with fallback to name-based key if code-based misses
+            let totalMarksKey = `${groupCode}_${String(subject.code).trim()}_Ob_MarksC`;
+            if (!studentData.hasOwnProperty(totalMarksKey)) {
+                totalMarksKey = `${groupCode}_${subject.sub_name.toLowerCase()}_Ob_Marks`;
+                if (!studentData.hasOwnProperty(totalMarksKey)) {
+                    console.warn(`Warning: Total key "${totalMarksKey}" (or code variant) not found for subject ${subject.sub_name}, group ${groupCode}`);
+                }
+            }
+
+            let gradeKey = `${groupCode}_${String(subject.code).trim()}_GdC`;
+            if (!studentData.hasOwnProperty(gradeKey)) {
+                gradeKey = `${groupCode}_${subject.sub_name.toLowerCase()}_Gd`;
+                if (!studentData.hasOwnProperty(gradeKey)) {
+                    console.warn(`Warning: Grade key "${gradeKey}" (or code variant) not found for subject ${subject.sub_name}, group ${groupCode}`);
+                }
+            }
 
             subjectRow.groups[groupCode].total = studentData[totalMarksKey] || '-';
             subjectRow.groups[groupCode].grade = studentData[gradeKey] || '-';
@@ -169,6 +188,11 @@ async function GenerateOdtFile() {
         if (!studentResponse.ok) throw new Error(`Failed to fetch student data: ${await studentResponse.text()}`);
 
         const studentResponseJson = await studentResponse.json();
+        // Debugging: Log the raw student data to check keys
+        console.log(`\n--- RAW STUDENT DATA FROM API ---`);
+        console.log(JSON.stringify(studentResponseJson, null, 2));
+        console.log(`--------------------------------\n`);
+
         const students = studentResponseJson.students || studentResponseJson.data || [];
         if (!Array.isArray(students) || students.length === 0) {
             console.warn("Warning: No students found. Exiting gracefully.");
