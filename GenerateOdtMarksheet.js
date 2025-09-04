@@ -45,8 +45,9 @@ async function fetchMarksheetConfig(groupIds) {
 
     const { data: exams, error: examsError } = await supabase
         .from('cce_exams')
-        .select('exam_code, name, examgroups, maximum_marks, minimum_marks, subjects!inner(_uid, sub_name, code)')
-        .in('examgroups', groupIds);
+        .select('exam_code, name, examgroups, maximum_marks, minimum_marks, subjects!inner(_uid, sub_name, code, is_coscholastic_sub)')
+        .in('examgroups', groupIds)
+        .eq('subjects.is_coscholastic_sub', false); // Ensure we only get scholastic subjects here
     if (examsError) throw new Error(`Error fetching exams: ${examsError.message}`);
 
     const subjectsMap = new Map();
@@ -55,14 +56,53 @@ async function fetchMarksheetConfig(groupIds) {
             subjectsMap.set(exam.subjects._uid, exam.subjects);
         }
     });
-    const subjects = Array.from(subjectsMap.values());
+    const scholasticSubjects = Array.from(subjectsMap.values());
 
-    console.log(`Found ${subjects.length} unique subjects and ${exams.length} exams.`);
-    return { examGroups, exams, subjects };
+    console.log("Fetching co-scholastic subject configurations...");
+    const { data: coScholasticSubjects, error: coScholasticError } = await supabase
+        .from('subjects')
+        .select('_uid, sub_name, code')
+        .eq('is_coscholastic_sub', true);
+
+    if (coScholasticError) {
+        console.warn(`Warning: Could not fetch co-scholastic subjects. They will be skipped. Error: ${coScholasticError.message}`);
+    }
+
+    console.log(`Found ${scholasticSubjects.length} unique scholastic subjects and ${exams.length} exams.`);
+    return { examGroups, exams, subjects: scholasticSubjects, coScholasticSubjects: coScholasticSubjects || [] };
 }
 
-function transformStudentDataForCarbone(studentData, config) {
-    const structured = { ...studentData, subjects: [] };
+// ================== NEW FUNCTION ==================
+async function fetchCoScholasticGrades(studentIds, groupIds) {
+    if (!studentIds || studentIds.length === 0) return {};
+    console.log(`Fetching co-scholastic grades for ${studentIds.length} students...`);
+
+    const { data, error } = await supabase
+        .from('coscholastic_sub_grade')
+        .select('grade, subjectid, studentid')
+        .in('studentid', studentIds)
+        .in('exam_groups', groupIds);
+
+    if (error) {
+        throw new Error(`Error fetching co-scholastic grades: ${error.message}`);
+    }
+
+    // Group grades by studentid for quick lookup
+    const gradesByStudent = {};
+    for (const record of data) {
+        if (!gradesByStudent[record.studentid]) {
+            gradesByStudent[record.studentid] = [];
+        }
+        gradesByStudent[record.studentid].push(record);
+    }
+
+    console.log(`Found co-scholastic grades for ${Object.keys(gradesByStudent).length} students.`);
+    return gradesByStudent;
+}
+// ==================================================
+
+function transformStudentDataForCarbone(studentData, config, studentCoScholasticGrades) {
+    const structured = { ...studentData, subjects: [], coScholastic: [] };
     const grandTotals = {};
 
     for (const subject of config.subjects) {
@@ -105,19 +145,22 @@ function transformStudentDataForCarbone(studentData, config) {
             subjectRow.groups[groupCode].grade = studentData[gradeKey] || '-';
         }
 
-        // Calculate the grand total by summing the totals of each group (hy, fe, etc.)
-        const subjectGrandTotal = Object.values(subjectRow.groups).reduce((sum, group) => {
-            // Ensure we are adding numbers, default to 0 if a total is not a valid number
-            return sum + (Number(group.total) || 0);
-        }, 0);
-
-        // Construct the key to find the pre-calculated grand grade from the student data
+        const subjectGrandTotal = Object.values(subjectRow.groups).reduce((sum, group) => sum + (Number(group.total) || 0), 0);
         const grandGradeKey = `grand_${String(subject.code).trim()}_gd`;
-
         subjectRow.grandTotal = subjectGrandTotal;
         subjectRow.grandGrade = studentData[grandGradeKey] || '-';
-
         structured.subjects.push(subjectRow);
+    }
+
+    if (config.coScholasticSubjects?.length > 0) {
+        for (const coSub of config.coScholasticSubjects) {
+            const gradeRecord = studentCoScholasticGrades.find(g => g.subjectid === coSub._uid);
+
+            structured.coScholastic.push({
+                name: coSub.sub_name,
+                grade: gradeRecord ? (gradeRecord.grade || '-') : '-',
+            });
+        }
     }
 
     Object.assign(structured, grandTotals);
@@ -152,7 +195,7 @@ async function GenerateOdtFile() {
 
         const marksheetConfig = await fetchMarksheetConfig(groupIds);
         if (!marksheetConfig.subjects || marksheetConfig.subjects.length === 0) {
-            console.warn("Warning: No subjects found for this course. Marksheets may be empty.");
+            console.warn("Warning: No scholastic subjects found for this course.");
         }
 
         outputDir = path.join(process.cwd(), 'output');
@@ -185,6 +228,9 @@ async function GenerateOdtFile() {
         }
         console.log(`Generating marksheets for ${students.length} students...`);
 
+        const studentIds = students.map(s => s.student_id);
+        const allCoScholasticGrades = await fetchCoScholasticGrades(studentIds, groupIds);
+
         console.log("Downloading template from URL...");
         const templateBuffer = await downloadFile(templateUrl);
         const templatePath = path.join(outputDir, 'template.odt');
@@ -193,7 +239,11 @@ async function GenerateOdtFile() {
 
         for (const student of students) {
             console.log(`Processing student: ${student.full_name}`);
-            const transformedData = transformStudentDataForCarbone(student, marksheetConfig);
+
+            const studentCoScholasticGrades = allCoScholasticGrades[student.student_id] || [];
+
+            const transformedData = transformStudentDataForCarbone(student, marksheetConfig, studentCoScholasticGrades);
+
             const odtReport = await carboneRender(templatePath, transformedData);
 
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
@@ -215,7 +265,7 @@ async function GenerateOdtFile() {
 
             formData.append('photo', fileBuffer, {
                 filename: 'merged_output.pdf',
-                contentType: 'application/pdf',
+                contentType: 'application/pdf'
             });
             formData.append('key', filePath);
             formData.append('ContentType', 'application/pdf');
