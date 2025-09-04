@@ -82,7 +82,7 @@ async function fetchCoScholasticGrades(studentIds, groupIds) {
 
     const { data, error } = await supabase
         .from('coscholastic_sub_grade')
-        .select('grade, subjectid, studentid')
+        .select('grade, subjectid, studentid,exam_groups')
         .in('studentid', studentIds)
         .in('exam_groups', groupIds);
 
@@ -103,7 +103,7 @@ async function fetchCoScholasticGrades(studentIds, groupIds) {
 }
 
 function transformStudentDataForCarbone(studentData, config, studentCoScholasticGrades) {
-    const structured = { ...studentData, subjects: [], coScholastic: [] };
+    const structured = { ...studentData, subjects: [], coScholastic: {} };
     const grandTotals = {};
 
     for (const subject of config.subjects) {
@@ -154,13 +154,22 @@ function transformStudentDataForCarbone(studentData, config, studentCoScholastic
     }
 
     if (config.coScholasticSubjects?.length > 0) {
-        for (const coSub of config.coScholasticSubjects) {
-            const gradeRecord = studentCoScholasticGrades.find(g => g.subjectid === coSub._uid);
+        for (const group of config.examGroups) {
+            const groupCode = String(group.group_code).trim();
+            const groupId = group._uid;
 
-            structured.coScholastic.push({
-                name: coSub.sub_name,
-                grade: gradeRecord ? (gradeRecord.grade || '-') : '-',
-            });
+            structured.coScholastic[groupCode] = [];
+
+            for (const coSub of config.coScholasticSubjects) {
+                const gradeRecord = studentCoScholasticGrades.find(
+                    g => g.subjectid === coSub._uid && g.exam_groups === groupId
+                );
+
+                structured.coScholastic[groupCode].push({
+                    name: coSub.sub_name,
+                    grade: gradeRecord ? (gradeRecord.grade || '-') : '-',
+                });
+            }
         }
     }
 
