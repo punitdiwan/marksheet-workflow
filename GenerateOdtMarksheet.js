@@ -153,8 +153,8 @@ function transformStudentDataForCarbone(studentData, config, studentCoScholastic
         structured.subjects.push(subjectRow);
     }
 
-    if (config.coScholastic?.length > 0) {
-        for (const coSub of config.coScholastic) {
+    if (config.coScholasticSubjects?.length > 0) {
+        for (const coSub of config.coScholasticSubjects) {
             const subjectRow = {
                 name: coSub.sub_name,
                 groups: {}
