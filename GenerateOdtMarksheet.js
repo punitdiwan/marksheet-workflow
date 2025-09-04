@@ -103,7 +103,7 @@ async function fetchCoScholasticGrades(studentIds, groupIds) {
 }
 
 function transformStudentDataForCarbone(studentData, config, studentCoScholasticGrades) {
-    const structured = { ...studentData, scholasticSubjects: [], coScholasticSubjects: [] };
+    const structured = { ...studentData, subjects: [], coScholastic: [] };
     const grandTotals = {};
 
     for (const subject of config.subjects) {
@@ -150,11 +150,11 @@ function transformStudentDataForCarbone(studentData, config, studentCoScholastic
         const grandGradeKey = `grand_${String(subject.code).trim()}_gd`;
         subjectRow.grandTotal = subjectGrandTotal;
         subjectRow.grandGrade = studentData[grandGradeKey] || '-';
-        structured.scholasticSubjects.push(subjectRow);
+        structured.subjects.push(subjectRow);
     }
 
-    if (config.coScholasticSubjects?.length > 0) {
-        for (const coSub of config.coScholasticSubjects) {
+    if (config.coScholastic?.length > 0) {
+        for (const coSub of config.coScholastic) {
             const subjectRow = {
                 name: coSub.sub_name,
                 groups: {}
@@ -173,7 +173,7 @@ function transformStudentDataForCarbone(studentData, config, studentCoScholastic
                 };
             }
 
-            structured.coScholasticSubjects.push(subjectRow);
+            structured.coScholastic.push(subjectRow);
         }
     }
 
