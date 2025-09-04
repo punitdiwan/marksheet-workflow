@@ -165,9 +165,9 @@ function transformStudentDataForCarbone(studentData, config, studentCoScholastic
 
     Object.assign(structured, grandTotals);
 
-    console.log(`\n--- TRANSFORMED DATA FOR: ${studentData.full_name || 'N/A'} ---`);
-    console.log(JSON.stringify(structured, null, 2));
-    console.log(`---------------------------------------------------\n`);
+    // console.log(`\n--- TRANSFORMED DATA FOR: ${studentData.full_name || 'N/A'} ---`);
+    // console.log(JSON.stringify(structured, null, 2));
+    // console.log(`---------------------------------------------------\n`);
 
     return structured;
 }
@@ -237,12 +237,22 @@ async function GenerateOdtFile() {
         await fs.promises.writeFile(templatePath, templateBuffer);
         console.log(`Template saved locally to: ${templatePath}`);
 
+        let hasLoggedFirstStudent = false;
+
         for (const student of students) {
             console.log(`Processing student: ${student.full_name}`);
 
             const studentCoScholasticGrades = allCoScholasticGrades[student.student_id] || [];
 
             const transformedData = transformStudentDataForCarbone(student, marksheetConfig, studentCoScholasticGrades);
+
+            // Log the transformed data object for the first student and then stop.
+            if (!hasLoggedFirstStudent) {
+                console.log(`\n\n--- DEBUG: TRANSFORMED DATA FOR FIRST STUDENT (${student.full_name || 'N/A'}) ---`);
+                console.log(JSON.stringify(transformedData, null, 2));
+                console.log(`---------------------------------------------------------------------\n\n`);
+                hasLoggedFirstStudent = true; // Set the flag so it doesn't run again
+            }
 
             const odtReport = await carboneRender(templatePath, transformedData);
 
