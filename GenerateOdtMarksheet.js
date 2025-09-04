@@ -66,7 +66,7 @@ async function fetchMarksheetConfig(groupIds, batchId) {
         .from('subjects')
         .select('_uid, sub_name, code')
         .eq('is_coscholastic_sub', true)
-        .contains('batches', [batchId]);
+        .eq('batches', [batchId]);
 
     if (coScholasticError) {
         console.warn(`Warning: Could not fetch co-scholastic subjects. They will be skipped. Error: ${coScholasticError.message}`);
