@@ -103,7 +103,7 @@ async function fetchCoScholasticGrades(studentIds, groupIds) {
 }
 
 function transformStudentDataForCarbone(studentData, config, studentCoScholasticGrades) {
-    const structured = { ...studentData, subjects: [], coScholastic: {} };
+    const structured = { ...studentData, scholasticSubjects: [], coScholasticSubjects: [] };
     const grandTotals = {};
 
     for (const subject of config.subjects) {
@@ -150,26 +150,30 @@ function transformStudentDataForCarbone(studentData, config, studentCoScholastic
         const grandGradeKey = `grand_${String(subject.code).trim()}_gd`;
         subjectRow.grandTotal = subjectGrandTotal;
         subjectRow.grandGrade = studentData[grandGradeKey] || '-';
-        structured.subjects.push(subjectRow);
+        structured.scholasticSubjects.push(subjectRow);
     }
 
     if (config.coScholasticSubjects?.length > 0) {
-        for (const group of config.examGroups) {
-            const groupCode = String(group.group_code).trim();
-            const groupId = group._uid;
+        for (const coSub of config.coScholasticSubjects) {
+            const subjectRow = {
+                name: coSub.sub_name,
+                groups: {}
+            };
 
-            structured.coScholastic[groupCode] = [];
+            for (const group of config.examGroups) {
+                const groupCode = String(group.group_code).trim();
+                const groupId = group._uid;
 
-            for (const coSub of config.coScholasticSubjects) {
                 const gradeRecord = studentCoScholasticGrades.find(
                     g => g.subjectid === coSub._uid && g.exam_groups === groupId
                 );
 
-                structured.coScholastic[groupCode].push({
-                    name: coSub.sub_name,
+                subjectRow.groups[groupCode] = {
                     grade: gradeRecord ? (gradeRecord.grade || '-') : '-',
-                });
+                };
             }
+
+            structured.coScholasticSubjects.push(subjectRow);
         }
     }
 
