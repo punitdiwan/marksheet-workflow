@@ -34,8 +34,11 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
     },
 });
 
-async function fetchMarksheetConfig(groupIds) {
+async function fetchMarksheetConfig(groupIds, batchId) {
     console.log(`Fetching config for groups: ${groupIds}`);
+    if (!batchId) {
+        throw new Error("batchId is required to fetch marksheet config, but was not provided.");
+    }
 
     const { data: examGroups, error: groupsError } = await supabase
         .from('exam_groups')
@@ -47,7 +50,7 @@ async function fetchMarksheetConfig(groupIds) {
         .from('cce_exams')
         .select('exam_code, name, examgroups, maximum_marks, minimum_marks, subjects!inner(_uid, sub_name, code, is_coscholastic_sub)')
         .in('examgroups', groupIds)
-        .eq('subjects.is_coscholastic_sub', false); // Ensure we only get scholastic subjects here
+        .eq('subjects.is_coscholastic_sub', false);
     if (examsError) throw new Error(`Error fetching exams: ${examsError.message}`);
 
     const subjectsMap = new Map();
@@ -58,11 +61,12 @@ async function fetchMarksheetConfig(groupIds) {
     });
     const scholasticSubjects = Array.from(subjectsMap.values());
 
-    console.log("Fetching co-scholastic subject configurations...");
+    console.log(`Fetching co-scholastic subjects for batch ID: ${batchId}...`);
     const { data: coScholasticSubjects, error: coScholasticError } = await supabase
         .from('subjects')
         .select('_uid, sub_name, code')
-        .eq('is_coscholastic_sub', true);
+        .eq('is_coscholastic_sub', true)
+        .contains('batches', [batchId]);
 
     if (coScholasticError) {
         console.warn(`Warning: Could not fetch co-scholastic subjects. They will be skipped. Error: ${coScholasticError.message}`);
@@ -72,7 +76,6 @@ async function fetchMarksheetConfig(groupIds) {
     return { examGroups, exams, subjects: scholasticSubjects, coScholasticSubjects: coScholasticSubjects || [] };
 }
 
-// ================== NEW FUNCTION ==================
 async function fetchCoScholasticGrades(studentIds, groupIds) {
     if (!studentIds || studentIds.length === 0) return {};
     console.log(`Fetching co-scholastic grades for ${studentIds.length} students...`);
@@ -87,7 +90,6 @@ async function fetchCoScholasticGrades(studentIds, groupIds) {
         throw new Error(`Error fetching co-scholastic grades: ${error.message}`);
     }
 
-    // Group grades by studentid for quick lookup
     const gradesByStudent = {};
     for (const record of data) {
         if (!gradesByStudent[record.studentid]) {
@@ -99,7 +101,6 @@ async function fetchCoScholasticGrades(studentIds, groupIds) {
     console.log(`Found co-scholastic grades for ${Object.keys(gradesByStudent).length} students.`);
     return gradesByStudent;
 }
-// ==================================================
 
 function transformStudentDataForCarbone(studentData, config, studentCoScholasticGrades) {
     const structured = { ...studentData, subjects: [], coScholastic: [] };
@@ -164,11 +165,6 @@ function transformStudentDataForCarbone(studentData, config, studentCoScholastic
     }
 
     Object.assign(structured, grandTotals);
-
-    // console.log(`\n--- TRANSFORMED DATA FOR: ${studentData.full_name || 'N/A'} ---`);
-    // console.log(JSON.stringify(structured, null, 2));
-    // console.log(`---------------------------------------------------\n`);
-
     return structured;
 }
 
@@ -193,7 +189,8 @@ async function GenerateOdtFile() {
             throw new Error('Missing required environment variables from GitHub Actions inputs.');
         }
 
-        const marksheetConfig = await fetchMarksheetConfig(groupIds);
+        const marksheetConfig = await fetchMarksheetConfig(groupIds, batchId);
+
         if (!marksheetConfig.subjects || marksheetConfig.subjects.length === 0) {
             console.warn("Warning: No scholastic subjects found for this course.");
         }
@@ -213,14 +210,9 @@ async function GenerateOdtFile() {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(marksPayload),
         });
         if (!studentResponse.ok) throw new Error(`Failed to fetch student data: ${await studentResponse.text()}`);
-
         const studentResponseJson = await studentResponse.json();
-        // Debugging: Log the raw student data to check keys
-        console.log(`\n--- RAW STUDENT DATA FROM API ---`);
-        console.log(JSON.stringify(studentResponseJson, null, 2));
-        console.log(`--------------------------------\n`);
-
         const students = studentResponseJson.students || studentResponseJson.data || [];
+
         if (!Array.isArray(students) || students.length === 0) {
             console.warn("Warning: No students found. Exiting gracefully.");
             await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No students found." });
@@ -246,12 +238,12 @@ async function GenerateOdtFile() {
 
             const transformedData = transformStudentDataForCarbone(student, marksheetConfig, studentCoScholasticGrades);
 
-            // Log the transformed data object for the first student and then stop.
+
             if (!hasLoggedFirstStudent) {
                 console.log(`\n\n--- DEBUG: TRANSFORMED DATA FOR FIRST STUDENT (${student.full_name || 'N/A'}) ---`);
                 console.log(JSON.stringify(transformedData, null, 2));
                 console.log(`---------------------------------------------------------------------\n\n`);
-                hasLoggedFirstStudent = true; // Set the flag so it doesn't run again
+                hasLoggedFirstStudent = true;
             }
 
             const odtReport = await carboneRender(templatePath, transformedData);
@@ -320,7 +312,7 @@ async function updateJobHistory(jobId, schoolId, payload) {
             _school: schoolId,
             table: 'job_history',
             _uid: jobId,
-            payload: payload,
+            payload: payload
         };
         const jobUpdateRes = await fetch("https://demoschool.edusparsh.com/api/updatejobHistory", {
             method: 'POST',
