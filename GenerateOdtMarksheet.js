@@ -45,7 +45,7 @@ async function fetchMarksheetConfig(groupIds) {
 
     const { data: exams, error: examsError } = await supabase
         .from('cce_exams')
-        .select('exam_code, name, examgroups, subjects!inner(_uid, sub_name, code)')
+        .select('exam_code, name, examgroups, maximum_marks, minimum_marks, subjects!inner(_uid, sub_name, code)')
         .in('examgroups', groupIds);
     if (examsError) throw new Error(`Error fetching exams: ${examsError.message}`);
 
@@ -84,6 +84,9 @@ function transformStudentDataForCarbone(studentData, config) {
                 const simpleExamCode = compositeExamCode.split('_').pop();
 
                 subjectRow.groups[groupCode][simpleExamCode] = mark;
+
+                subjectRow.groups[groupCode][`${simpleExamCode}_max`] = exam.maximum_marks ?? '-';
+                subjectRow.groups[groupCode][`${simpleExamCode}_min`] = exam.minimum_marks ?? '-';
 
                 const totalKey = `${dataKey}_total`;
 
