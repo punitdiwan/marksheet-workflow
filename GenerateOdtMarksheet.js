@@ -66,6 +66,7 @@ async function fetchMarksheetConfig(groupIds, batchId) {
         .from('subjects')
         .select('_uid, sub_name, code')
         .eq('is_coscholastic_sub', true)
+        .eq('is_deleted', false)
         .eq('batches', [batchId]);
 
     if (coScholasticError) {
