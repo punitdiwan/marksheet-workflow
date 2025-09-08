@@ -48,8 +48,9 @@ async function fetchMarksheetConfig(groupIds, batchId) {
 
     const { data: exams, error: examsError } = await supabase
         .from('cce_exams')
-        .select('exam_code, name, examgroups, maximum_marks, minimum_marks, subjects!inner(_uid, sub_name, code, is_coscholastic_sub)')
+        .select('exam_code, name, examgroups, maximum_marks, minimum_marks, subjects!inner(_uid, sub_name, code, is_coscholastic_sub,is_deleted)')
         .in('examgroups', groupIds)
+        .eq('subjects.is_deleted', false)
         .eq('subjects.is_coscholastic_sub', false);
     if (examsError) throw new Error(`Error fetching exams: ${examsError.message}`);
 
