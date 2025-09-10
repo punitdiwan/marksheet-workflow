@@ -1,5 +1,5 @@
 // =================================================================
-//          GenerateOdtMarksheet.js (Final Corrected Script)
+//          GenerateOdtMarksheet.js (Refactored - API Driven)
 // =================================================================
 
 const fs = require('fs');
@@ -8,188 +8,18 @@ const { exec } = require('child_process');
 const util = require('util');
 const fetch = require('node-fetch');
 const carbone = require('carbone');
-const { createClient } = require('@supabase/supabase-js');
 const FormData = require('form-data');
 require('dotenv').config();
 
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
 
-// --- START: HARDCODE YOUR SECRETS HERE FOR TESTING ---
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-// --- END: HARDCODE YOUR SECRETS HERE ---
-
-const schemaName = process.env.SCHOOL_ID;
-
-if (!schemaName) {
-    throw new Error("FATAL: SCHOOL_ID (which is used as the schema name) is not defined in environment variables.");
-}
-
-console.log(`✅ Initializing Supabase client for schema: "${schemaName}"`);
-
-const supabase = createClient(supabaseUrl, supabaseKey, {
-    db: {
-        schema: schemaName,
-    },
-});
-
-async function fetchMarksheetConfig(groupIds, batchId) {
-    console.log(`Fetching config for groups: ${groupIds}`);
-    if (!batchId) {
-        throw new Error("batchId is required to fetch marksheet config, but was not provided.");
-    }
-
-    const { data: examGroups, error: groupsError } = await supabase
-        .from('exam_groups')
-        .select('_uid, group_code, name')
-        .in('_uid', groupIds);
-    if (groupsError) throw new Error(`Error fetching exam groups: ${groupsError.message}`);
-
-    const { data: exams, error: examsError } = await supabase
-        .from('cce_exams')
-        .select('exam_code, name, examgroups, maximum_marks, minimum_marks, subjects!inner(_uid, sub_name, code, is_coscholastic_sub,is_deleted)')
-        .in('examgroups', groupIds)
-        .eq('subjects.is_deleted', false)
-        .eq('subjects.is_coscholastic_sub', false);
-    if (examsError) throw new Error(`Error fetching exams: ${examsError.message}`);
-
-    const subjectsMap = new Map();
-    exams.forEach(exam => {
-        if (exam.subjects && !subjectsMap.has(exam.subjects._uid)) {
-            subjectsMap.set(exam.subjects._uid, exam.subjects);
-        }
-    });
-    const scholasticSubjects = Array.from(subjectsMap.values());
-
-    console.log(`Fetching co-scholastic subjects for batch ID: ${batchId}...`);
-    const { data: coScholasticSubjects, error: coScholasticError } = await supabase
-        .from('subjects')
-        .select('_uid, sub_name, code')
-        .eq('is_coscholastic_sub', true)
-        .eq('is_deleted', false)
-        .eq('batches', [batchId]);
-
-    if (coScholasticError) {
-        console.warn(`Warning: Could not fetch co-scholastic subjects. They will be skipped. Error: ${coScholasticError.message}`);
-    }
-
-    console.log(`Found ${scholasticSubjects.length} unique scholastic subjects and ${exams.length} exams.`);
-    return { examGroups, exams, subjects: scholasticSubjects, coScholasticSubjects: coScholasticSubjects || [] };
-}
-
-async function fetchCoScholasticGrades(studentIds, groupIds) {
-    if (!studentIds || studentIds.length === 0) return {};
-    console.log(`Fetching co-scholastic grades for ${studentIds.length} students...`);
-
-    const { data, error } = await supabase
-        .from('coscholastic_sub_grade')
-        .select('grade, subjectid, studentid,exam_groups')
-        .in('studentid', studentIds)
-        .in('exam_groups', groupIds);
-
-    if (error) {
-        throw new Error(`Error fetching co-scholastic grades: ${error.message}`);
-    }
-
-    const gradesByStudent = {};
-    for (const record of data) {
-        if (!gradesByStudent[record.studentid]) {
-            gradesByStudent[record.studentid] = [];
-        }
-        gradesByStudent[record.studentid].push(record);
-    }
-
-    console.log(`Found co-scholastic grades for ${Object.keys(gradesByStudent).length} students.`);
-    return gradesByStudent;
-}
-
-function transformStudentDataForCarbone(studentData, config, studentCoScholasticGrades) {
-    const structured = { ...studentData, subjects: [], coScholastic: [] };
-    const grandTotals = {};
-
-    for (const subject of config.subjects) {
-        const subjectRow = { name: subject.sub_name, groups: {} };
-
-        for (const group of config.examGroups) {
-            const groupCode = String(group.group_code).trim();
-            subjectRow.groups[groupCode] = {};
-
-            const examsInGroup = config.exams.filter(ex => ex.examgroups === group._uid && ex.subjects._uid === subject._uid);
-
-            for (const exam of examsInGroup) {
-                const compositeExamCode = String(exam.exam_code).trim();
-
-                const dataKey = `${groupCode}_${compositeExamCode}`;
-
-                const mark = studentData[dataKey] || '-';
-
-                const simpleExamCode = compositeExamCode.split('_').pop();
-
-                subjectRow.groups[groupCode][simpleExamCode] = mark;
-
-                subjectRow.groups[groupCode][`${simpleExamCode}_max`] = exam.maximum_marks ?? '-';
-                subjectRow.groups[groupCode][`${simpleExamCode}_min`] = exam.minimum_marks ?? '-';
-
-                const totalKey = `${dataKey}_total`;
-
-                let numericMark = Number(mark);
-                if (isNaN(numericMark)) {
-                    numericMark = 0;
-                }
-
-                grandTotals[totalKey] = (grandTotals[totalKey] || 0) + numericMark;
-            }
-
-            const totalMarksKey = `${groupCode}_${String(subject.code).trim()}_Ob_MarksC`;
-            const gradeKey = `${groupCode}_${String(subject.code).trim()}_GdC`;
-
-            subjectRow.groups[groupCode].total = studentData[totalMarksKey] || '-';
-            subjectRow.groups[groupCode].grade = studentData[gradeKey] || '-';
-        }
-
-        const subjectGrandTotal = Object.values(subjectRow.groups).reduce((sum, group) => sum + (Number(group.total) || 0), 0);
-        const grandGradeKey = `grand_${String(subject.code).trim()}_gd`;
-        subjectRow.grandTotal = subjectGrandTotal;
-        subjectRow.grandGrade = studentData[grandGradeKey] || '-';
-        structured.subjects.push(subjectRow);
-    }
-
-    if (config.coScholasticSubjects?.length > 0) {
-        for (const coSub of config.coScholasticSubjects) {
-            const subjectRow = {
-                name: coSub.sub_name,
-                groups: {}
-            };
-
-            for (const group of config.examGroups) {
-                const groupCode = String(group.group_code).trim();
-                const groupId = group._uid;
-
-                const gradeRecord = studentCoScholasticGrades.find(
-                    g => g.subjectid === coSub._uid && g.exam_groups === groupId
-                );
-
-                subjectRow.groups[groupCode] = {
-                    grade: gradeRecord ? (gradeRecord.grade || '-') : '-',
-                };
-            }
-
-            structured.coScholastic.push(subjectRow);
-        }
-    }
-
-    Object.assign(structured, grandTotals);
-    return structured;
-}
-
-
 async function GenerateOdtFile() {
     let outputDir = '';
     const jobId = process.env.JOB_ID;
 
     try {
-        console.log("Starting dynamic marksheet generation with Carbone...");
+        console.log("🚀 Starting dynamic marksheet generation with Carbone...");
 
         const groupid = process.env.GROUP_ID;
         const schoolId = process.env.SCHOOL_ID;
@@ -201,64 +31,88 @@ async function GenerateOdtFile() {
         const groupIds = groupid?.split(",");
 
         if (!templateUrl || !schoolId || !batchId || !jobId || !courseId || !groupIds) {
-            throw new Error('Missing required environment variables from GitHub Actions inputs.');
-        }
-
-        const marksheetConfig = await fetchMarksheetConfig(groupIds, batchId);
-
-        if (!marksheetConfig.subjects || marksheetConfig.subjects.length === 0) {
-            console.warn("Warning: No scholastic subjects found for this course.");
+            throw new Error('❌ Missing required environment variables from GitHub Actions inputs.');
         }
 
         outputDir = path.join(process.cwd(), 'output');
         await fs.promises.mkdir(outputDir, { recursive: true });
         const pdfPaths = [];
 
+        // ========================
+        // STEP 1: Fetch student marks from your API
+        // ========================
         const marksPayload = {
             _school: schoolId,
             batchId: [batchId],
             group: groupIds,
-            "currentdata": { "division_id": DIVISION_ID, "ranking_id": RANKING_ID }
+            currentdata: { division_id: DIVISION_ID, ranking_id: RANKING_ID }
         };
 
+        console.log("📥 Fetching student data...");
         const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(marksPayload),
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(marksPayload),
         });
+
         if (!studentResponse.ok) throw new Error(`Failed to fetch student data: ${await studentResponse.text()}`);
+
         const studentResponseJson = await studentResponse.json();
         const students = studentResponseJson.students || studentResponseJson.data || [];
 
         if (!Array.isArray(students) || students.length === 0) {
-            console.warn("Warning: No students found. Exiting gracefully.");
+            console.warn("⚠️ No students found. Exiting gracefully.");
             await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No students found." });
             return;
         }
-        console.log(`Generating marksheets for ${students.length} students...`);
+        console.log(`✅ Found ${students.length} students.`);
 
         const studentIds = students.map(s => s.student_id);
-        const allCoScholasticGrades = await fetchCoScholasticGrades(studentIds, groupIds);
 
-        console.log("Downloading template from URL...");
+        // ========================
+        // STEP 2: Call internal API for config + transformation
+        // ========================
+        console.log("📡 Fetching marksheet config + transformed data from API...");
+
+        const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                _school: schoolId,
+                groupIds,
+                batchId,
+                studentIds,
+                students,
+            }),
+        });
+
+        if (!apiRes.ok) throw new Error(`Config API failed: ${await apiRes.text()}`);
+        const { transformedStudents } = await apiRes.json();
+
+        console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
+
+        // ========================
+        // STEP 3: Download template
+        // ========================
+        console.log("📥 Downloading template...");
         const templateBuffer = await downloadFile(templateUrl);
         const templatePath = path.join(outputDir, 'template.odt');
         await fs.promises.writeFile(templatePath, templateBuffer);
-        console.log(`Template saved locally to: ${templatePath}`);
+        console.log(`✅ Template saved locally to: ${templatePath}`);
 
-        let hasLoggedFirstStudent = false;
+        // ========================
+        // STEP 4: Render ODT & convert to PDF
+        // ========================
+        for (let i = 0; i < students.length; i++) {
+            const student = students[i];
+            const transformedData = transformedStudents[i];
 
-        for (const student of students) {
-            console.log(`Processing student: ${student.full_name}`);
+            console.log(`📝 Processing student: ${student.full_name}`);
 
-            const studentCoScholasticGrades = allCoScholasticGrades[student.student_id] || [];
-
-            const transformedData = transformStudentDataForCarbone(student, marksheetConfig, studentCoScholasticGrades);
-
-
-            if (!hasLoggedFirstStudent) {
-                console.log(`\n\n--- DEBUG: TRANSFORMED DATA FOR FIRST STUDENT (${student.full_name || 'N/A'}) ---`);
+            if (i === 0) {
+                console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
                 console.log(JSON.stringify(transformedData, null, 2));
-                console.log(`---------------------------------------------------------------------\n\n`);
-                hasLoggedFirstStudent = true;
+                console.log(`---------------------------------------------------\n\n`);
             }
 
             const odtReport = await carboneRender(templatePath, transformedData);
@@ -271,6 +125,9 @@ async function GenerateOdtFile() {
             pdfPaths.push(pdfPath);
         }
 
+        // ========================
+        // STEP 5: Merge PDFs & Upload
+        // ========================
         const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
 
         if (pdfPaths.length > 0) {
@@ -288,7 +145,7 @@ async function GenerateOdtFile() {
             formData.append('ContentType', 'application/pdf');
             formData.append('jobId', jobId);
 
-            console.log(`Uploading merged PDF via API to path: ${filePath}`);
+            console.log(`📤 Uploading merged PDF to: ${filePath}`);
             const uploadRes = await fetch('https://demoschool.edusparsh.com/api/uploadfileToDigitalOcean', {
                 method: 'POST',
                 headers: formData.getHeaders(),
@@ -300,27 +157,25 @@ async function GenerateOdtFile() {
                 throw new Error(`File upload API failed: ${errorData || uploadRes.statusText}`);
             }
 
-            console.log("File uploaded successfully. Updating job_history table via API...");
+            console.log("✅ File uploaded successfully. Updating job_history...");
             await updateJobHistory(jobId, schoolId, { file_path: filePath, status: true });
-
-            console.log('Job_history updated successfully.');
+            console.log('✅ job_history updated successfully.');
         } else {
-            console.log('No PDFs were generated to merge.');
+            console.log('⚠️ No PDFs were generated to merge.');
         }
 
-        console.log("✅ Marksheets generated and uploaded successfully.");
+        console.log("🎉 Marksheets generated and uploaded successfully.");
 
     } catch (error) {
         console.error('❌ FATAL ERROR during marksheet generation:', error);
         if (jobId) {
-            await updateJobHistory(jobId, schemaName, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
+            await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
         process.exit(1);
     }
 }
 
 // --- UTILITY FUNCTIONS ---
-
 async function updateJobHistory(jobId, schoolId, payload) {
     try {
         const jobUpdatePayload = {
@@ -336,10 +191,10 @@ async function updateJobHistory(jobId, schoolId, payload) {
         });
         if (!jobUpdateRes.ok) {
             const errorData = await jobUpdateRes.text();
-            console.error(`Could not update job_history via API: ${errorData || jobUpdateRes.statusText}`);
+            console.error(`⚠️ Could not update job_history: ${errorData || jobUpdateRes.statusText}`);
         }
     } catch (apiError) {
-        console.error("An error occurred while trying to call the updateJobHistory API.", apiError);
+        console.error("⚠️ Error while updating job_history API.", apiError);
     }
 }
 
