@@ -17,6 +17,7 @@ const carboneRender = util.promisify(carbone.render);
 async function GenerateOdtFile() {
     let outputDir = '';
     const jobId = process.env.JOB_ID;
+    const schoolId = process.env.SCHOOL_ID;
 
     try {
         console.log("🚀 Starting dynamic marksheet generation with Carbone...");
