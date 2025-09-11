@@ -17,19 +17,20 @@ const carboneRender = util.promisify(carbone.render);
 async function GenerateOdtFile() {
     let outputDir = '';
     const jobId = process.env.JOB_ID;
+    const schoolId = process.env.SCHOOL_ID;
 
     try {
         console.log("🚀 Starting dynamic marksheet generation with Carbone...");
 
         const groupid = process.env.GROUP_ID;
-        const schoolId = process.env.SCHOOL_ID;
-        console.log("school id present in the data is", schoolId);
         const batchId = process.env.BATCH_ID;
         const courseId = process.env.COURSE_ID;
         const RANKING_ID = process.env.RANKING_ID;
         const DIVISION_ID = process.env.DIVISION_ID;
         const templateUrl = process.env.TEMPLATE_URL;
         const groupIds = groupid?.split(",");
+
+        console.log("school id present in the data is", schoolId);
 
         if (!templateUrl || !schoolId || !batchId || !jobId || !courseId || !groupIds) {
             throw new Error('❌ Missing required environment variables from GitHub Actions inputs.');
@@ -50,15 +51,22 @@ async function GenerateOdtFile() {
         };
 
         console.log("📥 Fetching student data...");
+        console.log('Marks Payload:', JSON.stringify(marksPayload, null, 2));
+
         const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(marksPayload),
         });
 
-        if (!studentResponse.ok) throw new Error(`Failed to fetch student data: ${await studentResponse.text()}`);
+        const responseText = await studentResponse.text();
 
-        const studentResponseJson = await studentResponse.json();
+        if (!studentResponse.ok) {
+            console.error('Raw API Response:', responseText);
+            throw new Error(`Failed to fetch student data: ${responseText}`);
+        }
+
+        const studentResponseJson = JSON.parse(responseText);
         const students = studentResponseJson.students || studentResponseJson.data || [];
 
         if (!Array.isArray(students) || students.length === 0) {
@@ -87,7 +95,11 @@ async function GenerateOdtFile() {
             }),
         });
 
-        if (!apiRes.ok) throw new Error(`Config API failed: ${await apiRes.text()}`);
+        if (!apiRes.ok) {
+            const errText = await apiRes.text();
+            throw new Error(`Config API failed: ${errText}`);
+        }
+
         const { transformedStudents } = await apiRes.json();
 
         console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
@@ -169,7 +181,7 @@ async function GenerateOdtFile() {
 
     } catch (error) {
         console.error('❌ FATAL ERROR during marksheet generation:', error);
-        if (jobId) {
+        if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
         process.exit(1);
