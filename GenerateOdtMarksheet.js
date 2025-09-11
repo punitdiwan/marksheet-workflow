@@ -118,7 +118,7 @@ async function GenerateOdtFile() {
         // ========================
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
-            const transformedData = transformedStudents[i];
+            let transformedData = transformedStudents[i];
 
             console.log(`📝 Processing student: ${student.full_name}`);
 
@@ -127,6 +127,22 @@ async function GenerateOdtFile() {
                 console.log(JSON.stringify(transformedData, null, 2));
                 console.log(`---------------------------------------------------\n\n`);
             }
+
+            // =================================================================
+            if (transformedData.photo && typeof transformedData.photo === 'string') {
+                const photoUrl = transformedData.photo;
+                // Determine mimetype from URL extension
+                const extension = photoUrl.split('.').pop()?.toLowerCase() || 'png';
+                const mimetype = `image/${extension === 'jpg' ? 'jpeg' : extension}`;
+
+                transformedData.photo = {
+                    d: photoUrl,    // The URL of the image
+                    w: 100,         // Desired width in pixels (adjust as needed)
+                    h: 120,         // Desired height in pixels (adjust as needed)
+                    mimetype: mimetype,
+                };
+            }
+            // =================================================================
 
             const odtReport = await carboneRender(templatePath, transformedData);
 
