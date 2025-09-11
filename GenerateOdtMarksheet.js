@@ -17,20 +17,18 @@ const carboneRender = util.promisify(carbone.render);
 async function GenerateOdtFile() {
     let outputDir = '';
     const jobId = process.env.JOB_ID;
-    const schoolId = process.env.SCHOOL_ID;
 
     try {
         console.log("🚀 Starting dynamic marksheet generation with Carbone...");
 
         const groupid = process.env.GROUP_ID;
+        const schoolId = process.env.SCHOOL_ID;
         const batchId = process.env.BATCH_ID;
         const courseId = process.env.COURSE_ID;
         const RANKING_ID = process.env.RANKING_ID;
         const DIVISION_ID = process.env.DIVISION_ID;
         const templateUrl = process.env.TEMPLATE_URL;
         const groupIds = groupid?.split(",");
-
-        console.log("school id present in the data is", schoolId);
 
         if (!templateUrl || !schoolId || !batchId || !jobId || !courseId || !groupIds) {
             throw new Error('❌ Missing required environment variables from GitHub Actions inputs.');
@@ -51,22 +49,15 @@ async function GenerateOdtFile() {
         };
 
         console.log("📥 Fetching student data...");
-        console.log('Marks Payload:', JSON.stringify(marksPayload, null, 2));
-
         const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(marksPayload),
         });
 
-        const responseText = await studentResponse.text();
+        if (!studentResponse.ok) throw new Error(`Failed to fetch student data: ${await studentResponse.text()}`);
 
-        if (!studentResponse.ok) {
-            console.error('Raw API Response:', responseText);
-            throw new Error(`Failed to fetch student data: ${responseText}`);
-        }
-
-        const studentResponseJson = JSON.parse(responseText);
+        const studentResponseJson = await studentResponse.json();
         const students = studentResponseJson.students || studentResponseJson.data || [];
 
         if (!Array.isArray(students) || students.length === 0) {
@@ -95,11 +86,7 @@ async function GenerateOdtFile() {
             }),
         });
 
-        if (!apiRes.ok) {
-            const errText = await apiRes.text();
-            throw new Error(`Config API failed: ${errText}`);
-        }
-
+        if (!apiRes.ok) throw new Error(`Config API failed: ${await apiRes.text()}`);
         const { transformedStudents } = await apiRes.json();
 
         console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
@@ -122,62 +109,22 @@ async function GenerateOdtFile() {
 
             console.log(`📝 Processing student: ${student.full_name}`);
 
-            // --- START: NEW IMAGE PRE-DOWNLOAD LOGIC ---
-            let tempImagePath = null; // To keep track of the temp file for cleanup
-            try {
-                // Check if there is a valid photo URL to process
-                if (transformedData.photo && typeof transformedData.photo === 'string' && transformedData.photo.includes('.')) {
-                    const photoUrl = transformedData.photo;
-                    console.log(`   Downloading image from: ${photoUrl}`);
-
-                    // 1. Download the image using node-fetch
-                    const imageBuffer = await downloadFile(photoUrl);
-
-                    // 2. Save it to a temporary local file
-                    const extension = photoUrl.split('.').pop()?.toLowerCase() || 'png';
-                    tempImagePath = path.join(outputDir, `temp_photo_${student.student_id}.${extension}`);
-                    await fs.promises.writeFile(tempImagePath, imageBuffer);
-                    console.log(`   Image saved locally to: ${tempImagePath}`);
-
-                    // 3. Update the data for Carbone to use the LOCAL PATH
-                    transformedData.photo = {
-                        d: tempImagePath, // Use the local file path
-                        w: 100,
-                        h: 120
-                        // Mimetype is not needed for local files, Carbone infers it
-                    };
-
-                } else {
-                    // If the photo URL is missing or invalid, remove the key
-                    delete transformedData.photo;
-                    console.log('   No valid photo URL found for this student.');
-                }
-
-                // --- END: NEW IMAGE PRE-DOWNLOAD LOGIC ---
-
-                if (i === 0) {
-                    console.log(`\n\n--- DEBUG: TRANSFORMED DATA for ${student.full_name} ---`);
-                    console.log(JSON.stringify(transformedData, null, 2));
-                    console.log(`---------------------------------------------------\n\n`);
-                }
-
-                const odtReport = await carboneRender(templatePath, transformedData);
-
-                const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
-                const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
-                await fs.promises.writeFile(odtFilename, odtReport);
-
-                const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
-                pdfPaths.push(pdfPath);
-
-            } finally {
-                // 4. Clean up the temporary image file after rendering is complete
-                if (tempImagePath) {
-                    await fs.promises.unlink(tempImagePath);
-                    console.log(`   Cleaned up temporary image: ${tempImagePath}`);
-                }
+            if (i === 0) {
+                console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
+                console.log(JSON.stringify(transformedData, null, 2));
+                console.log(`---------------------------------------------------\n\n`);
             }
+
+            const odtReport = await carboneRender(templatePath, transformedData);
+
+            const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
+            const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
+            await fs.promises.writeFile(odtFilename, odtReport);
+
+            const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
+            pdfPaths.push(pdfPath);
         }
+
         // ========================
         // STEP 5: Merge PDFs & Upload
         // ========================
@@ -221,7 +168,7 @@ async function GenerateOdtFile() {
 
     } catch (error) {
         console.error('❌ FATAL ERROR during marksheet generation:', error);
-        if (jobId && schoolId) {
+        if (jobId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
         process.exit(1);
