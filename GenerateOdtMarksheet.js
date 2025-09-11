@@ -39,6 +39,7 @@ async function GenerateOdtFile() {
 
         outputDir = path.join(process.cwd(), 'output');
         await fs.promises.mkdir(outputDir, { recursive: true });
+        const pdfPaths = [];
 
         // ========================
         // STEP 1: Fetch student marks from your API
@@ -67,11 +68,15 @@ async function GenerateOdtFile() {
         const studentResponseJson = await studentResponse.json();
         let students = studentResponseJson.students || studentResponseJson.data || [];
 
+        // ============================================================================
+        // If specific student IDs were requested, filter the results from the API.
+        // This corrects the issue where the API returns all students regardless of the payload.
         if (studentIdsInput) {
             const requestedStudentIds = new Set(studentIdsInput.split(','));
             console.log(`API returned ${students.length} students. Now filtering for the ${requestedStudentIds.size} requested student(s).`);
             students = students.filter(student => requestedStudentIds.has(student.student_id));
         }
+        // ============================================================================
 
         if (!Array.isArray(students) || students.length === 0) {
             console.warn("⚠️ No students found matching the criteria. Exiting gracefully.");
@@ -94,8 +99,8 @@ async function GenerateOdtFile() {
                 _school: schoolId,
                 groupIds,
                 batchId,
-                studentIds,
-                students,
+                studentIds, // This will now be the correctly filtered list of IDs
+                students,   // This will now be the correctly filtered list of student objects
             }),
         });
 
@@ -116,33 +121,26 @@ async function GenerateOdtFile() {
         // ========================
         // STEP 4: Render ODT & convert to PDF
         // ========================
-        const pdfPaths = [];
+        for (let i = 0; i < students.length; i++) {
+            const student = students[i];
+            const transformedData = transformedStudents[i];
 
-        let studentIndex = 0;
-        for (const student of students) {
-            const transformedData = transformedStudents[studentIndex];
-            console.log(`\n📝 Processing student ${studentIndex + 1}/${students.length}: ${student.full_name}`);
+            console.log(`📝 Processing student: ${student.full_name}`);
 
-            if (studentIndex === 0) {
-                console.log(`--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
+            if (i === 0) {
+                console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
                 console.log(JSON.stringify(transformedData, null, 2));
-                console.log(`---------------------------------------------------\n`);
+                console.log(`---------------------------------------------------\n\n`);
             }
 
-            console.log(`   - Rendering ODT file...`);
             const odtReport = await carboneRender(templatePath, transformedData);
 
-            const fileSafeName = student.full_name?.replace(/[\s/]/g, '_') || `student_${Date.now()}`;
+            const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             await fs.promises.writeFile(odtFilename, odtReport);
-            console.log(`   - ODT file saved: ${odtFilename}`);
 
-            // This is the crucial change. We await the conversion completely for each student.
             const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
             pdfPaths.push(pdfPath);
-            console.log(`   - PDF conversion complete: ${pdfPath}`);
-
-            studentIndex++;
         }
 
         // ========================
@@ -151,9 +149,7 @@ async function GenerateOdtFile() {
         const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
 
         if (pdfPaths.length > 0) {
-            console.log(`\n🌀 Merging ${pdfPaths.length} PDF(s)...`);
             await mergePdfs(pdfPaths, mergedPdfPath);
-            console.log(`✅ Merged PDF created at: ${mergedPdfPath}`);
 
             const filePath = `templates/marksheets/${schoolId}/result/${batchId}_${jobId}.pdf`;
             const fileBuffer = await fs.promises.readFile(mergedPdfPath);
@@ -186,7 +182,7 @@ async function GenerateOdtFile() {
             console.log('⚠️ No PDFs were generated to merge.');
         }
 
-        console.log("\n🎉 Marksheets generated and uploaded successfully.");
+        console.log("🎉 Marksheets generated and uploaded successfully.");
 
     } catch (error) {
         console.error('❌ FATAL ERROR during marksheet generation:', error);
@@ -227,29 +223,13 @@ async function downloadFile(url) {
 }
 
 async function convertOdtToPdf(odtPath, outputDir) {
-    // This function now robustly waits for the command to complete.
     const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
-    try {
-        const { stdout, stderr } = await execPromise(command);
-        if (stderr) {
-            console.warn(`[LibreOffice STDERR]: ${stderr}`);
-        }
-        // console.log(`[LibreOffice STDOUT]: ${stdout}`); // Optional: for debugging
-        return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
-    } catch (error) {
-        console.error(`❌ Error converting ${odtPath} to PDF.`);
-        throw error; // Rethrow the error to be caught by the main try/catch block
-    }
+    await execPromise(command);
+    return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
 }
 
 async function mergePdfs(pdfPaths, outputPath) {
     if (pdfPaths.length === 0) return;
-    if (pdfPaths.length === 1) {
-        // If there's only one PDF, just copy it to the output path instead of using pdftk.
-        console.log("Only one PDF generated, skipping merge and copying directly.");
-        await fs.promises.copyFile(pdfPaths[0], outputPath);
-        return;
-    }
     const command = `pdftk ${pdfPaths.map(p => `"${p}"`).join(' ')} cat output "${outputPath}"`;
     await execPromise(command);
 }
