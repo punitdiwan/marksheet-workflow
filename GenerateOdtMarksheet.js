@@ -143,10 +143,14 @@ async function GenerateOdtFile() {
                 };
             }
             // =================================================================
-            console.log('--- DATA BEING SENT TO CARBONE FOR PHOTO ---', JSON.stringify(transformedData.photo, null, 2));
+            // Add the options object to the render call
+            const options = {
+                "https": {
+                    "rejectUnauthorized": false
+                }
+            };
 
-
-            const odtReport = await carboneRender(templatePath, transformedData);
+            const odtReport = await carboneRender(templatePath, transformedData, options);
 
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
