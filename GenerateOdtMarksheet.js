@@ -30,7 +30,7 @@ async function GenerateOdtFile() {
         const DIVISION_ID = process.env.DIVISION_ID;
         const templateUrl = process.env.TEMPLATE_URL;
         const groupIds = groupid?.split(",");
-        const studentIdsInput = process.env.STUDENT_IDS; // MODIFIED: Read student IDs from env
+        const studentIdsInput = process.env.STUDENT_IDS;
 
 
         if (!templateUrl || !schoolId || !batchId || !jobId || !courseId || !groupIds) {
@@ -57,7 +57,6 @@ async function GenerateOdtFile() {
         }
 
         console.log("📥 Fetching student data with payload:", JSON.stringify(marksPayload));
-        console.log("📥 Fetching student data...");
         const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -67,14 +66,24 @@ async function GenerateOdtFile() {
         if (!studentResponse.ok) throw new Error(`Failed to fetch student data: ${await studentResponse.text()}`);
 
         const studentResponseJson = await studentResponse.json();
-        const students = studentResponseJson.students || studentResponseJson.data || [];
+        let students = studentResponseJson.students || studentResponseJson.data || [];
+
+        // ============================================================================
+        // If specific student IDs were requested, filter the results from the API.
+        // This corrects the issue where the API returns all students regardless of the payload.
+        if (studentIdsInput) {
+            const requestedStudentIds = new Set(studentIdsInput.split(','));
+            console.log(`API returned ${students.length} students. Now filtering for the ${requestedStudentIds.size} requested student(s).`);
+            students = students.filter(student => requestedStudentIds.has(student.student_id));
+        }
+        // ============================================================================
 
         if (!Array.isArray(students) || students.length === 0) {
-            console.warn("⚠️ No students found. Exiting gracefully.");
-            await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No students found." });
+            console.warn("⚠️ No students found matching the criteria. Exiting gracefully.");
+            await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No students found matching the criteria." });
             return;
         }
-        console.log(`✅ Found ${students.length} students.`);
+        console.log(`✅ Found and will process ${students.length} student(s).`);
 
         const studentIds = students.map(s => s.student_id);
 
@@ -90,8 +99,8 @@ async function GenerateOdtFile() {
                 _school: schoolId,
                 groupIds,
                 batchId,
-                studentIds,
-                students,
+                studentIds, // This will now be the correctly filtered list of IDs
+                students,   // This will now be the correctly filtered list of student objects
             }),
         });
 
