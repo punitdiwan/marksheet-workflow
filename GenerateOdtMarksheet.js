@@ -130,6 +130,9 @@ async function GenerateOdtFile() {
                 console.log(`---------------------------------------------------\n\n`);
             }
 
+            console.log("Photo sample:", data[0].photoBase64?.substring(0, 100));
+
+
             const odtReport = await carboneRender(templatePath, transformedData);
 
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
