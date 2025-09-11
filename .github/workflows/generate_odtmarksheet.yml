@@ -23,6 +23,9 @@ on:
       TEMPLATE_URL:
         description: TEMPLATE URL
         required: true
+      STUDENT_IDS:
+        description: 'Comma-separated list of student IDs to process'
+        required: false
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -48,6 +51,7 @@ jobs:
           TEMPLATE_URL="${{ github.event.inputs.TEMPLATE_URL }}"
           JOB_ID="${{ github.event.inputs.JOB_ID }}"
           COURSE_ID="${{ github.event.inputs.COURSE_ID }}"
+          STUDENT_IDS="${{ github.event.inputs.STUDENT_IDS }}"
 
           echo "SCHOOL_ID=$SCHOOL_ID" >> $GITHUB_ENV
           echo "BATCH_ID=$BATCH_ID" >> $GITHUB_ENV
@@ -57,6 +61,8 @@ jobs:
           echo "TEMPLATE_URL=$TEMPLATE_URL" >> $GITHUB_ENV
           echo "JOB_ID=$JOB_ID" >> $GITHUB_ENV
           echo "COURSE_ID=$COURSE_ID" >> $GITHUB_ENV
+          echo "STUDENT_IDS=$STUDENT_IDS" >> $GITHUB_ENV
+
       - name: Install dependencies
         run: |
           npm install

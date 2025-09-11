@@ -30,6 +30,8 @@ async function GenerateOdtFile() {
         const DIVISION_ID = process.env.DIVISION_ID;
         const templateUrl = process.env.TEMPLATE_URL;
         const groupIds = groupid?.split(",");
+        const studentIdsInput = process.env.STUDENT_IDS; // MODIFIED: Read student IDs from env
+
 
         if (!templateUrl || !schoolId || !batchId || !jobId || !courseId || !groupIds) {
             throw new Error('❌ Missing required environment variables from GitHub Actions inputs.');
@@ -49,6 +51,12 @@ async function GenerateOdtFile() {
             currentdata: { division_id: DIVISION_ID, ranking_id: RANKING_ID }
         };
 
+        if (studentIdsInput) {
+            console.log(`Filtering for specific students: ${studentIdsInput}`);
+            marksPayload.student_ids = studentIdsInput.split(',');
+        }
+
+        console.log("📥 Fetching student data with payload:", JSON.stringify(marksPayload));
         console.log("📥 Fetching student data...");
         const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
             method: 'POST',
