@@ -110,28 +110,11 @@ async function GenerateOdtFile() {
 
             console.log(`📝 Processing student: ${student.full_name}`);
 
-            // Fetch and convert student photo to base64
-            let photoBase64 = '';
-            if (student.photo) {
-                try {
-                    photoBase64 = await fetchImageAsBase64(student.photo);
-                    transformedData.photoBase64 = photoBase64; // Add base64 image to transformed data
-                } catch (err) {
-                    console.warn(`⚠️ Failed to fetch or convert photo for ${student.full_name}: ${err.message}`);
-                    transformedData.photoBase64 = ''; // Fallback to empty string
-                }
-            } else {
-                transformedData.photoBase64 = ''; // No photo URL provided
-            }
-
             if (i === 0) {
                 console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
                 console.log(JSON.stringify(transformedData, null, 2));
                 console.log(`---------------------------------------------------\n\n`);
             }
-
-            console.log("Photo sample:", data[0].photoBase64?.substring(0, 100));
-
 
             const odtReport = await carboneRender(templatePath, transformedData);
 
@@ -220,14 +203,6 @@ async function downloadFile(url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
     return Buffer.from(await res.arrayBuffer());
-}
-
-async function fetchImageAsBase64(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Failed to fetch image: ${res.statusText}`);
-    const buffer = Buffer.from(await res.arrayBuffer());
-    const mimeType = res.headers.get('content-type') || 'image/png';
-    return `data:${mimeType};base64,${buffer.toString('base64')}`;
 }
 
 async function convertOdtToPdf(odtPath, outputDir) {
