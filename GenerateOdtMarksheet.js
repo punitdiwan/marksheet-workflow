@@ -143,6 +143,8 @@ async function GenerateOdtFile() {
                 };
             }
             // =================================================================
+            console.log('--- DATA BEING SENT TO CARBONE FOR PHOTO ---', JSON.stringify(transformedData.photo, null, 2));
+
 
             const odtReport = await carboneRender(templatePath, transformedData);
 
