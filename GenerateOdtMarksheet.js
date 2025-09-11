@@ -23,6 +23,7 @@ async function GenerateOdtFile() {
 
         const groupid = process.env.GROUP_ID;
         const schoolId = process.env.SCHOOL_ID;
+        console.log("school id present in the data is", schoolId);
         const batchId = process.env.BATCH_ID;
         const courseId = process.env.COURSE_ID;
         const RANKING_ID = process.env.RANKING_ID;
