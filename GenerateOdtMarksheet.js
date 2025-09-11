@@ -1,5 +1,5 @@
 // =================================================================
-//          GenerateOdtMarksheet.js (Refactored - API Driven)
+//          GenerateOdtMarksheet.js (Refactored - API Driven + Photos)
 // =================================================================
 
 const fs = require('fs');
@@ -14,6 +14,62 @@ require('dotenv').config();
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
 
+// --- UTILITY FUNCTIONS ---
+async function updateJobHistory(jobId, schoolId, payload) {
+    try {
+        const jobUpdatePayload = {
+            _school: schoolId,
+            table: 'job_history',
+            _uid: jobId,
+            payload: payload
+        };
+        const jobUpdateRes = await fetch("https://demoschool.edusparsh.com/api/updatejobHistory", {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(jobUpdatePayload),
+        });
+        if (!jobUpdateRes.ok) {
+            const errorData = await jobUpdateRes.text();
+            console.error(`⚠️ Could not update job_history: ${errorData || jobUpdateRes.statusText}`);
+        }
+    } catch (apiError) {
+        console.error("⚠️ Error while updating job_history API.", apiError);
+    }
+}
+
+async function downloadFile(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
+    return Buffer.from(await res.arrayBuffer());
+}
+
+async function convertOdtToPdf(odtPath, outputDir) {
+    const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
+    await execPromise(command);
+    return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
+}
+
+async function mergePdfs(pdfPaths, outputPath) {
+    if (pdfPaths.length === 0) return;
+    const command = `pdftk ${pdfPaths.map(p => `"${p}"`).join(' ')} cat output "${outputPath}"`;
+    await execPromise(command);
+}
+
+// 🔥 Fetch image and convert to base64
+async function fetchImageAsBase64(url) {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to fetch image: ${url}`);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        const mimeType = url.endsWith(".png") ? "image/png" : "image/jpeg";
+        return `data:${mimeType};base64,${buffer.toString("base64")}`;
+    } catch (err) {
+        console.warn("⚠️ Could not fetch photo for student:", url, err.message);
+        return null;
+    }
+}
+
+// --- MAIN FUNCTION ---
 async function GenerateOdtFile() {
     let outputDir = '';
     const jobId = process.env.JOB_ID;
@@ -68,15 +124,11 @@ async function GenerateOdtFile() {
         const studentResponseJson = await studentResponse.json();
         let students = studentResponseJson.students || studentResponseJson.data || [];
 
-        // ============================================================================
-        // If specific student IDs were requested, filter the results from the API.
-        // This corrects the issue where the API returns all students regardless of the payload.
         if (studentIdsInput) {
             const requestedStudentIds = new Set(studentIdsInput.split(','));
             console.log(`API returned ${students.length} students. Now filtering for the ${requestedStudentIds.size} requested student(s).`);
             students = students.filter(student => requestedStudentIds.has(student.student_id));
         }
-        // ============================================================================
 
         if (!Array.isArray(students) || students.length === 0) {
             console.warn("⚠️ No students found matching the criteria. Exiting gracefully.");
@@ -99,8 +151,8 @@ async function GenerateOdtFile() {
                 _school: schoolId,
                 groupIds,
                 batchId,
-                studentIds, // This will now be the correctly filtered list of IDs
-                students,   // This will now be the correctly filtered list of student objects
+                studentIds,
+                students,
             }),
         });
 
@@ -124,6 +176,11 @@ async function GenerateOdtFile() {
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             const transformedData = transformedStudents[i];
+
+            // 🔥 Embed Base64 photo into transformed data
+            if (student.photo) {
+                transformedData.photo = await fetchImageAsBase64(student.photo);
+            }
 
             console.log(`📝 Processing student: ${student.full_name}`);
 
@@ -191,47 +248,6 @@ async function GenerateOdtFile() {
         }
         process.exit(1);
     }
-}
-
-// --- UTILITY FUNCTIONS ---
-async function updateJobHistory(jobId, schoolId, payload) {
-    try {
-        const jobUpdatePayload = {
-            _school: schoolId,
-            table: 'job_history',
-            _uid: jobId,
-            payload: payload
-        };
-        const jobUpdateRes = await fetch("https://demoschool.edusparsh.com/api/updatejobHistory", {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(jobUpdatePayload),
-        });
-        if (!jobUpdateRes.ok) {
-            const errorData = await jobUpdateRes.text();
-            console.error(`⚠️ Could not update job_history: ${errorData || jobUpdateRes.statusText}`);
-        }
-    } catch (apiError) {
-        console.error("⚠️ Error while updating job_history API.", apiError);
-    }
-}
-
-async function downloadFile(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
-    return Buffer.from(await res.arrayBuffer());
-}
-
-async function convertOdtToPdf(odtPath, outputDir) {
-    const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
-    await execPromise(command);
-    return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
-}
-
-async function mergePdfs(pdfPaths, outputPath) {
-    if (pdfPaths.length === 0) return;
-    const command = `pdftk ${pdfPaths.map(p => `"${p}"`).join(' ')} cat output "${outputPath}"`;
-    await execPromise(command);
 }
 
 // --- EXECUTION ---
