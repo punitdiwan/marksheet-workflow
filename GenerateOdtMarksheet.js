@@ -118,48 +118,66 @@ async function GenerateOdtFile() {
         // ========================
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
-            let transformedData = transformedStudents[i];
+            const transformedData = transformedStudents[i];
 
             console.log(`📝 Processing student: ${student.full_name}`);
 
-            if (i === 0) {
-                console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
-                console.log(JSON.stringify(transformedData, null, 2));
-                console.log(`---------------------------------------------------\n\n`);
-            }
+            // --- START: NEW IMAGE PRE-DOWNLOAD LOGIC ---
+            let tempImagePath = null; // To keep track of the temp file for cleanup
+            try {
+                // Check if there is a valid photo URL to process
+                if (transformedData.photo && typeof transformedData.photo === 'string' && transformedData.photo.includes('.')) {
+                    const photoUrl = transformedData.photo;
+                    console.log(`   Downloading image from: ${photoUrl}`);
 
-            // =================================================================
-            if (transformedData.photo && typeof transformedData.photo === 'string') {
-                const photoUrl = transformedData.photo;
-                // Determine mimetype from URL extension
-                const extension = photoUrl.split('.').pop()?.toLowerCase() || 'png';
-                const mimetype = `image/${extension === 'jpg' ? 'jpeg' : extension}`;
+                    // 1. Download the image using node-fetch
+                    const imageBuffer = await downloadFile(photoUrl);
 
-                transformedData.photo = {
-                    d: photoUrl,    // The URL of the image
-                    w: 100,         // Desired width in pixels (adjust as needed)
-                    h: 120,         // Desired height in pixels (adjust as needed)
-                    mimetype: mimetype,
-                };
-            }
-            // =================================================================
-            // Add the options object to the render call
-            const options = {
-                "https": {
-                    "rejectUnauthorized": false
+                    // 2. Save it to a temporary local file
+                    const extension = photoUrl.split('.').pop()?.toLowerCase() || 'png';
+                    tempImagePath = path.join(outputDir, `temp_photo_${student.student_id}.${extension}`);
+                    await fs.promises.writeFile(tempImagePath, imageBuffer);
+                    console.log(`   Image saved locally to: ${tempImagePath}`);
+
+                    // 3. Update the data for Carbone to use the LOCAL PATH
+                    transformedData.photo = {
+                        d: tempImagePath, // Use the local file path
+                        w: 100,
+                        h: 120
+                        // Mimetype is not needed for local files, Carbone infers it
+                    };
+
+                } else {
+                    // If the photo URL is missing or invalid, remove the key
+                    delete transformedData.photo;
+                    console.log('   No valid photo URL found for this student.');
                 }
-            };
 
-            const odtReport = await carboneRender(templatePath, transformedData, options);
+                // --- END: NEW IMAGE PRE-DOWNLOAD LOGIC ---
 
-            const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
-            const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
-            await fs.promises.writeFile(odtFilename, odtReport);
+                if (i === 0) {
+                    console.log(`\n\n--- DEBUG: TRANSFORMED DATA for ${student.full_name} ---`);
+                    console.log(JSON.stringify(transformedData, null, 2));
+                    console.log(`---------------------------------------------------\n\n`);
+                }
 
-            const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
-            pdfPaths.push(pdfPath);
+                const odtReport = await carboneRender(templatePath, transformedData);
+
+                const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
+                const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
+                await fs.promises.writeFile(odtFilename, odtReport);
+
+                const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
+                pdfPaths.push(pdfPath);
+
+            } finally {
+                // 4. Clean up the temporary image file after rendering is complete
+                if (tempImagePath) {
+                    await fs.promises.unlink(tempImagePath);
+                    console.log(`   Cleaned up temporary image: ${tempImagePath}`);
+                }
+            }
         }
-
         // ========================
         // STEP 5: Merge PDFs & Upload
         // ========================
