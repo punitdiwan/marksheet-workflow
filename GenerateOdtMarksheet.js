@@ -43,11 +43,33 @@ async function downloadFile(url) {
     return Buffer.from(await res.arrayBuffer());
 }
 
+// ✨ UPDATED FUNCTION: More robust error handling for LibreOffice conversion
 async function convertOdtToPdf(odtPath, outputDir) {
     const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
-    await execPromise(command);
-    return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
+    try {
+        console.log(`🔄 Running conversion for: ${path.basename(odtPath)}`);
+        const { stdout, stderr } = await execPromise(command);
+
+        // Log standard error even on success, as LibreOffice can be verbose with warnings.
+        if (stderr) {
+            console.warn(`[LibreOffice STDERR for ${path.basename(odtPath)}]:`, stderr);
+        }
+
+        return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
+
+    } catch (error) {
+        // This block catches catastrophic failures of the command itself.
+        console.error(`❌ LibreOffice command failed for ${path.basename(odtPath)}.`);
+        console.error('--- STDOUT ---');
+        console.error(error.stdout);
+        console.error('--- STDERR ---');
+        console.error(error.stderr);
+        console.error('----------------');
+        // Re-throw a clearer error to stop the script
+        throw new Error(`LibreOffice conversion failed. See logs above.`);
+    }
 }
+
 
 async function mergePdfs(pdfPaths, outputPath) {
     if (pdfPaths.length === 0) return;
@@ -79,7 +101,7 @@ async function GenerateOdtFile() {
         console.log("🚀 Starting dynamic marksheet generation with Carbone...");
 
         const groupid = process.env.GROUP_ID;
-        const schoolId = process.env.SCHOOL_ID;
+        // Re-declaring schoolId here is redundant but harmless.
         const batchId = process.env.BATCH_ID;
         const courseId = process.env.COURSE_ID;
         const RANKING_ID = process.env.RANKING_ID;
@@ -197,6 +219,18 @@ async function GenerateOdtFile() {
             await fs.promises.writeFile(odtFilename, odtReport);
 
             const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
+
+            // ✨ NEW: Verify that the PDF file was actually created. This is the crucial check.
+            if (!fs.existsSync(pdfPath)) {
+                // Log the data that caused the failure for easy debugging
+                console.error(`\n\n--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
+                console.error(JSON.stringify(transformedData, null, 2));
+                console.error(`------------------------------------------------------------------\n\n`);
+                // Throw a specific error that stops the script
+                throw new Error(`PDF generation failed for "${student.full_name}". Output file not found at: ${pdfPath}. This usually means the student's data caused an error in the template engine or LibreOffice.`);
+            }
+
+            console.log(`✅ Successfully converted PDF for ${student.full_name}`);
             pdfPaths.push(pdfPath);
         }
 
@@ -243,7 +277,7 @@ async function GenerateOdtFile() {
 
     } catch (error) {
         console.error('❌ FATAL ERROR during marksheet generation:', error);
-        if (jobId) {
+        if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
         process.exit(1);
