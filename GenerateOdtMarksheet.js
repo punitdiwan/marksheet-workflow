@@ -180,6 +180,8 @@ async function GenerateOdtFile() {
 
         if (!apiRes.ok) throw new Error(`Config API failed: ${await apiRes.text()}`);
         const { transformedStudents } = await apiRes.json();
+        console.log("transformedStudents_mkp", transformedStudents[0]);
+
 
         console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
 
