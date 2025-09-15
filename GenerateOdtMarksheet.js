@@ -166,22 +166,51 @@ async function GenerateOdtFile() {
         // ========================
         console.log("📡 Fetching marksheet config + transformed data from API...");
 
+        // ✅ DEBUG: Log the exact payload being sent to your API
+        const apiPayload = {
+            _school: schoolId,
+            groupIds,
+            batchId,
+            studentIds,
+            students,
+        };
+        console.log("--- DEBUG: PAYLOAD SENT TO /api/marksheetdataodt ---");
+        // We log only the first student for brevity, but you can log the whole thing
+        console.log(JSON.stringify({ ...apiPayload, students: students.slice(0, 1) }, null, 2));
+        console.log("-------------------------------------------------");
+
         const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                _school: schoolId,
-                groupIds,
-                batchId,
-                studentIds,
-                students,
-            }),
+            body: JSON.stringify(apiPayload), // Use the logged payload
         });
 
         if (!apiRes.ok) throw new Error(`Config API failed: ${await apiRes.text()}`);
-        const { transformedStudents } = await apiRes.json();
+
+        // ✅ DEBUG: Log the raw JSON response from the API
+        const apiResponseJson = await apiRes.json();
+        console.log("--- DEBUG: RAW RESPONSE FROM /api/marksheetdataodt ---");
+        // Log the structure and first transformed student
+        console.log(JSON.stringify({
+            ...apiResponseJson,
+            transformedStudents: apiResponseJson.transformedStudents?.slice(0, 1)
+        }, null, 2));
+        console.log("----------------------------------------------------");
+
+        const { transformedStudents } = apiResponseJson; // Use the parsed JSON
+
+        if (!transformedStudents || transformedStudents.length === 0) {
+            throw new Error("API returned no transformed students.");
+        }
 
         console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
+
+        // ✅ DEBUG: Specifically inspect the subjects of the first student
+        if (transformedStudents[0] && transformedStudents[0].subjects) {
+            console.log(`--- DEBUG: Subjects for first student (${transformedStudents[0].full_name}) ---`);
+            console.log(transformedStudents[0].subjects.map(s => s.name));
+            console.log("----------------------------------------------------");
+        }
 
         // ========================
         // STEP 3: Download template
