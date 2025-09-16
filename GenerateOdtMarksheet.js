@@ -203,7 +203,7 @@ async function GenerateOdtFile() {
             const transformedData = transformedStudents[i];
 
             // 🔥 Embed Base64 photo into transformed data
-            if (student.photo) {
+            if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
                 transformedData.photo = await fetchImageAsBase64(student.photo);
             }
 
