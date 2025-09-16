@@ -152,6 +152,8 @@ async function GenerateOdtFile() {
             students = students.filter(student => requestedStudentIds.has(student.student_id));
         }
 
+        students = students.map(s => ({ ...s, _uid: s.student_id }));
+
         if (!Array.isArray(students) || students.length === 0) {
             console.warn("⚠️ No students found matching the criteria. Exiting gracefully.");
             await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No students found matching the criteria." });
