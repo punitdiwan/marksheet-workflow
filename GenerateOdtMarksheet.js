@@ -165,7 +165,8 @@ async function GenerateOdtFile() {
         // STEP 2: Call internal API for config + transformation
         // ========================
         console.log("📡 Fetching marksheet config + transformed data from API...");
-
+        console.log("\n🔍 Debugging students before sending to marksheetdataodt API:");
+        console.dir(students, { depth: null });
         const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
