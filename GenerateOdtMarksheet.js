@@ -43,14 +43,13 @@ async function downloadFile(url) {
     return Buffer.from(await res.arrayBuffer());
 }
 
-// ✨ UPDATED FUNCTION: More robust error handling for LibreOffice conversion
+// ✨ UPDATED Function: More robust error handling for LibreOffice conversion
 async function convertOdtToPdf(odtPath, outputDir) {
     const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
     try {
         console.log(`🔄 Running conversion for: ${path.basename(odtPath)}`);
         const { stdout, stderr } = await execPromise(command);
 
-        // Log standard error even on success, as LibreOffice can be verbose with warnings.
         if (stderr) {
             console.warn(`[LibreOffice STDERR for ${path.basename(odtPath)}]:`, stderr);
         }
@@ -58,18 +57,14 @@ async function convertOdtToPdf(odtPath, outputDir) {
         return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
 
     } catch (error) {
-        // This block catches catastrophic failures of the command itself.
         console.error(`❌ LibreOffice command failed for ${path.basename(odtPath)}.`);
         console.error('--- STDOUT ---');
         console.error(error.stdout);
         console.error('--- STDERR ---');
         console.error(error.stderr);
-        console.error('----------------');
-        // Re-throw a clearer error to stop the script
         throw new Error(`LibreOffice conversion failed. See logs above.`);
     }
 }
-
 
 async function mergePdfs(pdfPaths, outputPath) {
     if (pdfPaths.length === 0) return;
@@ -101,7 +96,6 @@ async function GenerateOdtFile() {
         console.log("🚀 Starting dynamic marksheet generation with Carbone...");
 
         const groupid = process.env.GROUP_ID;
-        // Re-declaring schoolId here is redundant but harmless.
         const batchId = process.env.BATCH_ID;
         const courseId = process.env.COURSE_ID;
         const RANKING_ID = process.env.RANKING_ID;
@@ -109,7 +103,6 @@ async function GenerateOdtFile() {
         const templateUrl = process.env.TEMPLATE_URL;
         const groupIds = groupid?.split(",");
         const studentIdsInput = process.env.STUDENT_IDS;
-
 
         if (!templateUrl || !schoolId || !batchId || !jobId || !courseId || !groupIds) {
             throw new Error('❌ Missing required environment variables from GitHub Actions inputs.');
@@ -119,16 +112,13 @@ async function GenerateOdtFile() {
         await fs.promises.mkdir(outputDir, { recursive: true });
         const pdfPaths = [];
 
-        // ========================
-        // STEP 1: Fetch student marks from your API
-        // ========================
+        // STEP 1: Fetch student marks
         const marksPayload = {
             _school: schoolId,
             batchId: [batchId],
             group: groupIds,
             currentdata: { division_id: DIVISION_ID, ranking_id: RANKING_ID }
         };
-
         if (studentIdsInput) {
             console.log(`Filtering for specific students: ${studentIdsInput}`);
             marksPayload.student_ids = studentIdsInput.split(',');
@@ -149,26 +139,29 @@ async function GenerateOdtFile() {
         if (studentIdsInput) {
             const requestedStudentIds = new Set(studentIdsInput.split(','));
             console.log(`API returned ${students.length} students. Now filtering for the ${requestedStudentIds.size} requested student(s).`);
-            students = students.filter(student => requestedStudentIds.has(student.student_id));
+            students = students.filter(student => student && student.student_id && requestedStudentIds.has(student.student_id));
         }
 
-        students = students.map(s => ({ ...s, _uid: s.student_id }));
+        // 🛡️ Additional validation
+        students = students.filter(s => s && typeof s === 'object');           // filter null / non-objects
+        students = students.filter(s => s.student_id);                        // ensure student_id exists
 
-        if (!Array.isArray(students) || students.length === 0) {
-            console.warn("⚠️ No students found matching the criteria. Exiting gracefully.");
-            await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No students found matching the criteria." });
+        if (students.length === 0) {
+            console.warn("⚠️ No valid students found matching the criteria. Exiting gracefully.");
+            await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No valid students found matching the criteria." });
             return;
         }
+
+        // Inject _uid
+        students = students.map(s => ({ ...s, _uid: s.student_id }));
+
         console.log(`✅ Found and will process ${students.length} student(s).`);
 
-        const studentIds = students.map(s => s.student_id);
-
-        // ========================
-        // STEP 2: Call internal API for config + transformation
-        // ========================
+        // STEP 2: Call config + transformation API
         console.log("📡 Fetching marksheet config + transformed data from API...");
         console.log("\n🔍 Debugging students before sending to marksheetdataodt API:");
         console.dir(students, { depth: null });
+
         const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -176,30 +169,35 @@ async function GenerateOdtFile() {
                 _school: schoolId,
                 groupIds,
                 batchId,
-                studentIds,
+                studentIds: students.map(s => s.student_id),
                 students,
             }),
         });
 
-        if (!apiRes.ok) throw new Error(`Config API failed: ${await apiRes.text()}`);
-        const { transformedStudents } = await apiRes.json();
+        if (!apiRes.ok) {
+            const bodyText = await apiRes.text();
+            throw new Error(`Config API failed: ${bodyText}`);
+        }
+        const apiJson = await apiRes.json();
+
+        if (!apiJson.transformedStudents) {
+            console.error("❗️ API response missing `transformedStudents` field. Full response:");
+            console.dir(apiJson, { depth: null });
+            throw new Error(`Config API failed: missing transformedStudents in response.`);
+        }
+
+        const { transformedStudents } = apiJson;
         console.log("transformedStudents_mkp", transformedStudents[0]);
-
-
         console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
 
-        // ========================
         // STEP 3: Download template
-        // ========================
         console.log("📥 Downloading template...");
         const templateBuffer = await downloadFile(templateUrl);
         const templatePath = path.join(outputDir, 'template.odt');
         await fs.promises.writeFile(templatePath, templateBuffer);
         console.log(`✅ Template saved locally to: ${templatePath}`);
 
-        // ========================
         // STEP 4: Render ODT & convert to PDF
-        // ========================
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             const transformedData = transformedStudents[i];
@@ -225,23 +223,18 @@ async function GenerateOdtFile() {
 
             const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
 
-            // ✨ NEW: Verify that the PDF file was actually created. This is the crucial check.
             if (!fs.existsSync(pdfPath)) {
-                // Log the data that caused the failure for easy debugging
                 console.error(`\n\n--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
                 console.error(JSON.stringify(transformedData, null, 2));
                 console.error(`------------------------------------------------------------------\n\n`);
-                // Throw a specific error that stops the script
-                throw new Error(`PDF generation failed for "${student.full_name}". Output file not found at: ${pdfPath}. This usually means the student's data caused an error in the template engine or LibreOffice.`);
+                throw new Error(`PDF generation failed for "${student.full_name}". Output file not found at: ${pdfPath}.`);
             }
 
             console.log(`✅ Successfully converted PDF for ${student.full_name}`);
             pdfPaths.push(pdfPath);
         }
 
-        // ========================
         // STEP 5: Merge PDFs & Upload
-        // ========================
         const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
 
         if (pdfPaths.length > 0) {
@@ -281,7 +274,7 @@ async function GenerateOdtFile() {
         console.log("🎉 Marksheets generated and uploaded successfully.");
 
     } catch (error) {
-        console.error('❌ FATAL ERROR during marksheet generation:', error);
+        console.error('❌ FATAL ERROR during marksheet generation:', error.message || error);
         if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
