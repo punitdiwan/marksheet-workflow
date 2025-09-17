@@ -54,7 +54,7 @@ async function convertOdtToPdf(odtPath, outputDir) {
             fs.mkdirSync(absOutputDir, { recursive: true });
         }
 
-        const cmd = `libreoffice --headless --norestore --invisible --convert-to pdf --outdir "${absOutputDir}" "${absOdtPath}"`;
+        const cmd = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtFile}"`;
         console.log(`⚙️ Executing: ${cmd}`);
 
         const { stdout, stderr } = await execPromise(cmd, { timeout: 20000 });
