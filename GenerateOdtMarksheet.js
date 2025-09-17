@@ -43,7 +43,7 @@ async function downloadFile(url) {
     return Buffer.from(await res.arrayBuffer());
 }
 
-// ✨ UPDATED Function: More robust error handling for LibreOffice conversion
+// ✨ MODIFIED Function: More robust error logging for LibreOffice conversion
 async function convertOdtToPdf(odtPath, outputDir) {
     try {
         const absOdtPath = path.resolve(odtPath);
@@ -65,14 +65,12 @@ async function convertOdtToPdf(odtPath, outputDir) {
             contentType: "application/vnd.oasis.opendocument.text",
         });
 
-        // --- Gotenberg LibreOffice API endpoint ---
         const url = "https://demo.gotenberg.dev/forms/libreoffice/convert";
-        // If you run your own Gotenberg server, replace with: http://localhost:3000/forms/libreoffice/convert
 
         const response = await axios.post(url, formData, {
             headers: formData.getHeaders(),
             responseType: "stream",
-            timeout: 60000, // 1 minute timeout
+            timeout: 60000,
         });
 
         const pdfPath = path.join(
@@ -97,11 +95,22 @@ async function convertOdtToPdf(odtPath, outputDir) {
 
         return pdfPath;
     } catch (err) {
-        console.error("❌ API conversion error:", err.message);
-        throw err;
+        // Capture detailed error message from Gotenberg's response body
+        if (err.response && err.response.data && typeof err.response.data.pipe === 'function') {
+            const errorStream = err.response.data;
+            let errorBody = '';
+            // Asynchronously read the stream
+            for await (const chunk of errorStream) {
+                errorBody += chunk.toString('utf8');
+            }
+            console.error("❌ API conversion error from Gotenberg:", errorBody);
+            throw new Error(`Gotenberg API failed: ${errorBody}`);
+        } else {
+            console.error("❌ API conversion error:", err.message);
+            throw err;
+        }
     }
 }
-
 
 async function mergePdfs(pdfPaths, outputPath) {
     if (pdfPaths.length === 0) return;
@@ -109,7 +118,6 @@ async function mergePdfs(pdfPaths, outputPath) {
     await execPromise(command);
 }
 
-// 🔥 Fetch image and convert to base64
 async function fetchImageAsBase64(url) {
     try {
         const res = await fetch(url);
@@ -122,6 +130,35 @@ async function fetchImageAsBase64(url) {
         return null;
     }
 }
+
+// ✨ NEW: Robust recursive data cleaning function
+function cleanData(data) {
+    if (data === null || data === undefined || (typeof data === 'number' && isNaN(data))) {
+        return ''; // Replace null, undefined, and numeric NaN with a safe value
+    }
+
+    if (Array.isArray(data)) {
+        return data.map(item => cleanData(item)); // Recurse into arrays
+    }
+
+    if (typeof data === 'object') {
+        const cleanedObject = {};
+        for (const key in data) {
+            if (Object.prototype.hasOwnProperty.call(data, key)) {
+                // Also check for the string 'NaN' which you observed in logs
+                if (data[key] === 'NaN') {
+                    cleanedObject[key] = '';
+                } else {
+                    cleanedObject[key] = cleanData(data[key]); // Recurse into object properties
+                }
+            }
+        }
+        return cleanedObject;
+    }
+
+    return data; // Return primitives (string, boolean, valid number) as-is
+}
+
 
 // --- MAIN FUNCTION ---
 async function GenerateOdtFile() {
@@ -239,22 +276,9 @@ async function GenerateOdtFile() {
             const student = students[i];
             let transformedData = transformedStudents[i];
 
-            // Clean NaN values
-            function cleanNaN(obj) {
-                if (obj === null || typeof obj !== 'object') return;
-                if (Array.isArray(obj)) {
-                    obj.forEach(cleanNaN);
-                } else {
-                    Object.keys(obj).forEach(key => {
-                        if (typeof obj[key] === 'string' && obj[key] === 'NaN') {
-                            obj[key] = '';
-                        } else {
-                            cleanNaN(obj[key]);
-                        }
-                    });
-                }
-            }
-            cleanNaN(transformedData);
+            // ✨ MODIFIED: Use the new robust cleaning function
+            console.log("🧼 Cleaning data for student:", student.full_name);
+            transformedData = cleanData(transformedData);
 
             // Embed Base64 photo
             if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
@@ -265,7 +289,7 @@ async function GenerateOdtFile() {
 
             try {
                 const odtReport = await carboneRender(templatePath, transformedData);
-                const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
+                const fileSafeName = student.full_name?.replace(/[\s/\\?%*:|"<>.]+/g, '_') || `student_${Date.now()}`; // Made file name safer
                 const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
                 await fs.promises.writeFile(odtFilename, odtReport);
 
