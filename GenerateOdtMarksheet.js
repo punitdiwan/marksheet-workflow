@@ -45,26 +45,36 @@ async function downloadFile(url) {
 
 // ✨ UPDATED Function: More robust error handling for LibreOffice conversion
 async function convertOdtToPdf(odtPath, outputDir) {
-    const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
     try {
-        console.log(`🔄 Running conversion for: ${path.basename(odtPath)}`);
-        const { stdout, stderr } = await execPromise(command);
+        const absOdtPath = path.resolve(odtPath);
+        const absOutputDir = path.resolve(outputDir);
 
-        if (stderr) {
-            console.warn(`[LibreOffice STDERR for ${path.basename(odtPath)}]:`, stderr);
+        // Ensure output dir exists
+        if (!fs.existsSync(absOutputDir)) {
+            fs.mkdirSync(absOutputDir, { recursive: true });
         }
 
-        return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
+        const cmd = `libreoffice --headless --norestore --invisible --convert-to pdf --outdir "${absOutputDir}" "${absOdtPath}"`;
+        console.log(`⚙️ Executing: ${cmd}`);
 
-    } catch (error) {
-        console.error(`❌ LibreOffice command failed for ${path.basename(odtPath)}.`);
-        console.error('--- STDOUT ---');
-        console.error(error.stdout);
-        console.error('--- STDERR ---');
-        console.error(error.stderr);
-        throw new Error(`LibreOffice conversion failed. See logs above.`);
+        const { stdout, stderr } = await execPromise(cmd, { timeout: 20000 });
+
+        if (stdout) console.log(`[LibreOffice STDOUT]: ${stdout.trim()}`);
+        if (stderr) console.error(`[LibreOffice STDERR]: ${stderr.trim()}`);
+
+        const pdfPath = path.join(absOutputDir, path.basename(absOdtPath).replace(/\.odt$/i, ".pdf"));
+
+        if (!fs.existsSync(pdfPath)) {
+            throw new Error(`PDF not found after conversion: ${pdfPath}`);
+        }
+
+        return pdfPath;
+    } catch (err) {
+        console.error(`❌ LibreOffice conversion error:`, err.message);
+        throw err;
     }
 }
+
 
 async function mergePdfs(pdfPaths, outputPath) {
     if (pdfPaths.length === 0) return;
