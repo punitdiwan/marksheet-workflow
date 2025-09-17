@@ -232,15 +232,36 @@ async function GenerateOdtFile() {
                 const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
                 await fs.promises.writeFile(odtFilename, odtReport);
 
-                // ✅ Try conversion
-                const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
-
-                if (!fs.existsSync(pdfPath)) {
-                    throw new Error(`PDF not found at ${pdfPath}`);
+                // --- Verify ODT exists & log size ---
+                if (fs.existsSync(odtFilename)) {
+                    const stats = await fs.promises.stat(odtFilename);
+                    console.log(`📂 ODT file generated: ${odtFilename} (${stats.size} bytes)`);
+                } else {
+                    console.error(`❌ ODT file missing: ${odtFilename}`);
+                    continue; // skip this student
                 }
 
-                console.log(`✅ Successfully converted PDF for ${student.full_name}`);
-                pdfPaths.push(pdfPath);
+                // ✅ Try conversion
+                console.log(`🔄 Running conversion for: ${fileSafeName}.odt`);
+                let pdfPath;
+                try {
+                    pdfPath = await convertOdtToPdf(odtFilename, outputDir);
+                } catch (convErr) {
+                    console.error(`❌ Conversion failed for ${student.full_name}:`, convErr.message);
+                    continue;
+                }
+
+
+                // --- Verify PDF exists ---
+                if (fs.existsSync(pdfPath)) {
+                    const stats = await fs.promises.stat(pdfPath);
+                    console.log(`✅ Successfully converted PDF for ${student.full_name} (${stats.size} bytes)`);
+                    pdfPaths.push(pdfPath);
+                } else {
+                    console.error(`⚠️ PDF not found for ${student.full_name}, skipping.`);
+                    continue;
+                }
+
 
             } catch (err) {
                 console.error(`⚠️ Failed to generate PDF for ${student.full_name}: ${err.message}`);
