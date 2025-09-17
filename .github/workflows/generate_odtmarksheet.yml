@@ -29,11 +29,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    services:
-      gotenberg:
-        image: gotenberg/gotenberg:7
-        ports:
-          - 3000:3000
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -67,20 +62,24 @@ jobs:
           echo "JOB_ID=$JOB_ID" >> $GITHUB_ENV
           echo "COURSE_ID=$COURSE_ID" >> $GITHUB_ENV
           echo "STUDENT_IDS=$STUDENT_IDS" >> $GITHUB_ENV
-          echo "GOTENBERG_URL=http://gotenberg:3000" >> $GITHUB_ENV
 
       - name: Install dependencies
-        run: npm install
-
+        run: |
+          npm install
+      - name: Install LibreOffice
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libreoffice   
+          
       - name: Install PDFtk
         run: |
           sudo apt-get update
           sudo apt-get install -y pdftk   
       - name: Create output directory
         run: mkdir -p output
-
       - name: Run GenerateOdtMarksheet.js
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: node GenerateOdtMarksheet.js
+        run: |
+          node GenerateOdtMarksheet.js

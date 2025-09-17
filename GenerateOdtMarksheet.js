@@ -10,7 +10,7 @@ const fetch = require('node-fetch');
 const carbone = require('carbone');
 const FormData = require('form-data');
 require('dotenv').config();
-
+const axios = require("axios");
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
 
@@ -44,7 +44,6 @@ async function downloadFile(url) {
 }
 
 // ✨ UPDATED Function: More robust error handling for LibreOffice conversion
-// ✨ Gotenberg-based ODT → PDF conversion
 async function convertOdtToPdf(odtPath, outputDir) {
     try {
         const absOdtPath = path.resolve(odtPath);
@@ -58,38 +57,45 @@ async function convertOdtToPdf(odtPath, outputDir) {
             fs.mkdirSync(absOutputDir, { recursive: true });
         }
 
-        console.log(`🔄 Sending ${path.basename(absOdtPath)} to Gotenberg for conversion...`);
+        console.log(`🔄 Uploading ${path.basename(absOdtPath)} to Gotenberg API for conversion...`);
 
         const formData = new FormData();
         formData.append("files", fs.createReadStream(absOdtPath));
+        formData.append("merge", "true"); // ensures PDF output
 
-        // Default: Gotenberg runs at http://localhost:3000
-        const gotenbergUrl = process.env.GOTENBERG_URL || "http://localhost:3000";
+        // --- Use Demo Gotenberg server (replace with your own if needed) ---
+        const url = "https://demo.gotenberg.dev/forms/libreoffice/convert";
+        // const url = "http://yourserver:3000/forms/libreoffice/convert";
 
-        const res = await fetch(`${gotenbergUrl}/forms/libreoffice/convert`, {
-            method: "POST",
-            body: formData,
+        const response = await axios.post(url, formData, {
+            headers: formData.getHeaders(),
+            responseType: "stream",
+            timeout: 60000, // 1 minute timeout
         });
 
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Gotenberg conversion failed: ${res.status} ${errText}`);
-        }
-
-        const pdfBuffer = Buffer.from(await res.arrayBuffer());
         const pdfPath = path.join(
             absOutputDir,
             path.basename(absOdtPath).replace(/\.odt$/i, ".pdf")
         );
 
-        await fs.promises.writeFile(pdfPath, pdfBuffer);
+        const writer = fs.createWriteStream(pdfPath);
+        response.data.pipe(writer);
+
+        await new Promise((resolve, reject) => {
+            writer.on("finish", resolve);
+            writer.on("error", reject);
+        });
+
+        if (!fs.existsSync(pdfPath)) {
+            throw new Error(`PDF not created at: ${pdfPath}`);
+        }
 
         const stats = await fs.promises.stat(pdfPath);
-        console.log(`✅ PDF generated via Gotenberg: ${pdfPath} (${stats.size} bytes)`);
+        console.log(`✅ PDF generated via API: ${pdfPath} (${stats.size} bytes)`);
 
         return pdfPath;
     } catch (err) {
-        console.error("❌ Gotenberg conversion error:", err.message);
+        console.error("❌ API conversion error:", err.message);
         throw err;
     }
 }
