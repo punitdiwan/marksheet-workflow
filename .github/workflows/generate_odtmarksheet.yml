@@ -66,10 +66,13 @@ jobs:
       - name: Install dependencies
         run: |
           npm install
-      - name: Install LibreOffice
+      - name: Install LibreOffice with Writer
         run: |
           sudo apt-get update
-          sudo apt-get install -y libreoffice   
+          sudo apt-get install -y libreoffice libreoffice-writer libreoffice-core libreoffice-common
+
+      - name: Install X Virtual Framebuffer
+        run: sudo apt-get install -y xvfb 
           
       - name: Install PDFtk
         run: |

@@ -59,7 +59,7 @@ async function convertOdtToPdf(odtPath, outputDir) {
 
         console.log(`🔄 Running conversion for: ${path.basename(absOdtPath)}`);
 
-        const cmd = `libreoffice --headless --convert-to pdf --outdir "${absOutputDir}" "${absOdtPath}"`;
+        const cmd = `xvfb-run --auto-servernum -- libreoffice --headless --convert-to pdf --outdir "${absOutputDir}" "${absOdtPath}"`;
         const { stdout, stderr } = await execPromise(cmd, { timeout: 20000 });
 
         if (stdout) console.log(`[LibreOffice STDOUT]: ${stdout.trim()}`);
