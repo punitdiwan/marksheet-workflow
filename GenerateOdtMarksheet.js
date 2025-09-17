@@ -44,6 +44,7 @@ async function downloadFile(url) {
 }
 
 // ✨ UPDATED Function: More robust error handling for LibreOffice conversion
+// ✨ Gotenberg-based ODT → PDF conversion
 async function convertOdtToPdf(odtPath, outputDir) {
     try {
         const absOdtPath = path.resolve(odtPath);
@@ -57,29 +58,38 @@ async function convertOdtToPdf(odtPath, outputDir) {
             fs.mkdirSync(absOutputDir, { recursive: true });
         }
 
-        console.log(`🔄 Running conversion for: ${path.basename(absOdtPath)}`);
+        console.log(`🔄 Sending ${path.basename(absOdtPath)} to Gotenberg for conversion...`);
 
-        const cmd = `xvfb-run --auto-servernum -- libreoffice --headless --convert-to pdf --outdir "${absOutputDir}" "${absOdtPath}"`;
-        const { stdout, stderr } = await execPromise(cmd, { timeout: 20000 });
+        const formData = new FormData();
+        formData.append("files", fs.createReadStream(absOdtPath));
 
-        if (stdout) console.log(`[LibreOffice STDOUT]: ${stdout.trim()}`);
-        if (stderr) console.error(`[LibreOffice STDERR]: ${stderr.trim()}`);
+        // Default: Gotenberg runs at http://localhost:3000
+        const gotenbergUrl = process.env.GOTENBERG_URL || "http://localhost:3000";
 
+        const res = await fetch(`${gotenbergUrl}/forms/libreoffice/convert`, {
+            method: "POST",
+            body: formData,
+        });
+
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Gotenberg conversion failed: ${res.status} ${errText}`);
+        }
+
+        const pdfBuffer = Buffer.from(await res.arrayBuffer());
         const pdfPath = path.join(
             absOutputDir,
             path.basename(absOdtPath).replace(/\.odt$/i, ".pdf")
         );
 
-        if (!fs.existsSync(pdfPath)) {
-            throw new Error(`PDF not found after conversion: ${pdfPath}`);
-        }
+        await fs.promises.writeFile(pdfPath, pdfBuffer);
 
         const stats = await fs.promises.stat(pdfPath);
-        console.log(`✅ PDF generated: ${pdfPath} (${stats.size} bytes)`);
+        console.log(`✅ PDF generated via Gotenberg: ${pdfPath} (${stats.size} bytes)`);
 
         return pdfPath;
     } catch (err) {
-        console.error("❌ LibreOffice conversion error:", err.message);
+        console.error("❌ Gotenberg conversion error:", err.message);
         throw err;
     }
 }
