@@ -202,7 +202,7 @@ async function GenerateOdtFile() {
             const student = students[i];
             let transformedData = transformedStudents[i];
 
-            // Clean "NaN" strings to empty strings to avoid ODT corruption
+            // Clean NaN values
             function cleanNaN(obj) {
                 if (obj === null || typeof obj !== 'object') return;
                 if (Array.isArray(obj)) {
@@ -218,36 +218,36 @@ async function GenerateOdtFile() {
                 }
             }
             cleanNaN(transformedData);
-            // 🔥 Embed Base64 photo into transformed data
+
+            // Embed Base64 photo
             if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
                 transformedData.photo = await fetchImageAsBase64(student.photo);
             }
 
             console.log(`📝 Processing student: ${student.full_name}`);
 
-            if (i === 0) {
-                console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
-                console.log(JSON.stringify(transformedData, null, 2));
-                console.log(`---------------------------------------------------\n\n`);
+            try {
+                const odtReport = await carboneRender(templatePath, transformedData);
+                const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
+                const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
+                await fs.promises.writeFile(odtFilename, odtReport);
+
+                // ✅ Try conversion
+                const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
+
+                if (!fs.existsSync(pdfPath)) {
+                    throw new Error(`PDF not found at ${pdfPath}`);
+                }
+
+                console.log(`✅ Successfully converted PDF for ${student.full_name}`);
+                pdfPaths.push(pdfPath);
+
+            } catch (err) {
+                console.error(`⚠️ Failed to generate PDF for ${student.full_name}: ${err.message}`);
+                // Skip this student but continue workflow
+                await updateJobHistory(jobId, schoolId, { status: false, notes: `PDF failed for ${student.full_name}: ${err.message}`.substring(0, 200) });
+                continue;
             }
-
-            const odtReport = await carboneRender(templatePath, transformedData);
-
-            const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
-            const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
-            await fs.promises.writeFile(odtFilename, odtReport);
-
-            const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
-
-            if (!fs.existsSync(pdfPath)) {
-                console.error(`\n\n--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
-                console.error(JSON.stringify(transformedData, null, 2));
-                console.error(`------------------------------------------------------------------\n\n`);
-                throw new Error(`PDF generation failed for "${student.full_name}". Output file not found at: ${pdfPath}.`);
-            }
-
-            console.log(`✅ Successfully converted PDF for ${student.full_name}`);
-            pdfPaths.push(pdfPath);
         }
 
         // STEP 5: Merge PDFs & Upload
@@ -294,7 +294,7 @@ async function GenerateOdtFile() {
         if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
-        process.exit(1);
+        // process.exit(1);
     }
 }
 
