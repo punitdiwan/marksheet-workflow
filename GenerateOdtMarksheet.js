@@ -43,7 +43,6 @@ async function downloadFile(url) {
     return Buffer.from(await res.arrayBuffer());
 }
 
-// ✨ UPDATED Function: More robust error handling for LibreOffice conversion
 async function convertOdtToPdf(odtPath, outputDir) {
     const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
     try {
@@ -51,6 +50,7 @@ async function convertOdtToPdf(odtPath, outputDir) {
         const { stdout, stderr } = await execPromise(command);
 
         if (stderr) {
+            // LibreOffice often outputs non-fatal warnings to stderr. We log them but don't treat them as errors unless the PDF is not created.
             console.warn(`[LibreOffice STDERR for ${path.basename(odtPath)}]:`, stderr);
         }
 
@@ -72,7 +72,6 @@ async function mergePdfs(pdfPaths, outputPath) {
     await execPromise(command);
 }
 
-// 🔥 Fetch image and convert to base64
 async function fetchImageAsBase64(url) {
     try {
         const res = await fetch(url);
@@ -142,9 +141,7 @@ async function GenerateOdtFile() {
             students = students.filter(student => student && student.student_id && requestedStudentIds.has(student.student_id));
         }
 
-        // 🛡️ Additional validation
-        students = students.filter(s => s && typeof s === 'object');           // filter null / non-objects
-        students = students.filter(s => s.student_id);                        // ensure student_id exists
+        students = students.filter(s => s && typeof s === 'object' && s.student_id);
 
         if (students.length === 0) {
             console.warn("⚠️ No valid students found matching the criteria. Exiting gracefully.");
@@ -152,16 +149,11 @@ async function GenerateOdtFile() {
             return;
         }
 
-        // Inject _uid
         students = students.map(s => ({ ...s, _uid: s.student_id }));
-
         console.log(`✅ Found and will process ${students.length} student(s).`);
 
         // STEP 2: Call config + transformation API
         console.log("📡 Fetching marksheet config + transformed data from API...");
-        console.log("\n🔍 Debugging students before sending to marksheetdataodt API:");
-        console.dir(students, { depth: null });
-
         const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -174,20 +166,11 @@ async function GenerateOdtFile() {
             }),
         });
 
-        if (!apiRes.ok) {
-            const bodyText = await apiRes.text();
-            throw new Error(`Config API failed: ${bodyText}`);
-        }
+        if (!apiRes.ok) throw new Error(`Config API failed: ${await apiRes.text()}`);
         const apiJson = await apiRes.json();
-
-        if (!apiJson.transformedStudents) {
-            console.error("❗️ API response missing `transformedStudents` field. Full response:");
-            console.dir(apiJson, { depth: null });
-            throw new Error(`Config API failed: missing transformedStudents in response.`);
-        }
+        if (!apiJson.transformedStudents) throw new Error(`Config API failed: missing transformedStudents in response.`);
 
         const { transformedStudents } = apiJson;
-        console.log("transformedStudents_mkp", transformedStudents[0]);
         console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
 
         // STEP 3: Download template
@@ -197,47 +180,55 @@ async function GenerateOdtFile() {
         await fs.promises.writeFile(templatePath, templateBuffer);
         console.log(`✅ Template saved locally to: ${templatePath}`);
 
-        // STEP 4: Render ODT & convert to PDF
+        // STEP 4: Render ODT & convert to PDF for each student
+        const failedStudents = []; // ✨ Keep track of failures
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             const transformedData = transformedStudents[i];
 
-            // 🔥 Embed Base64 photo into transformed data
-            if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
-                transformedData.photo = await fetchImageAsBase64(student.photo);
-            }
+            // ✨ Start of individual student processing with error handling
+            try {
+                if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
+                    transformedData.photo = await fetchImageAsBase64(student.photo);
+                }
 
-            console.log(`📝 Processing student: ${student.full_name}`);
+                console.log(`📝 Processing student: ${student.full_name}`);
 
-            if (i === 0) {
-                console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
-                console.log(JSON.stringify(transformedData, null, 2));
-                console.log(`---------------------------------------------------\n\n`);
-            }
+                if (i === 0) { // Debug first student's data
+                    console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
+                    console.log(JSON.stringify(transformedData, null, 2));
+                    console.log(`---------------------------------------------------\n\n`);
+                }
 
-            const odtReport = await carboneRender(templatePath, transformedData);
+                const odtReport = await carboneRender(templatePath, transformedData);
 
-            const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
-            const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
-            await fs.promises.writeFile(odtFilename, odtReport);
+                const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
+                const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
+                await fs.promises.writeFile(odtFilename, odtReport);
 
-            const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
+                const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
 
-            if (!fs.existsSync(pdfPath)) {
-                console.error(`\n\n--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
+                if (!fs.existsSync(pdfPath)) {
+                    throw new Error(`PDF generation failed. Output file not found at: ${pdfPath}.`);
+                }
+
+                console.log(`✅ Successfully converted PDF for ${student.full_name}`);
+                pdfPaths.push(pdfPath);
+
+            } catch (studentError) { // ✨ Catch errors for this specific student
+                console.error(`\n--- ❌ ERROR processing student: ${student.full_name} ---`);
+                console.error(studentError.message);
+                console.error("--- DATA that may have caused failure ---");
                 console.error(JSON.stringify(transformedData, null, 2));
-                console.error(`------------------------------------------------------------------\n\n`);
-                throw new Error(`PDF generation failed for "${student.full_name}". Output file not found at: ${pdfPath}.`);
+                console.error(`---------------------------------------------------\n`);
+                failedStudents.push(student.full_name || `student_id_${student.student_id}`);
+                // The loop will automatically continue to the next student
             }
-
-            console.log(`✅ Successfully converted PDF for ${student.full_name}`);
-            pdfPaths.push(pdfPath);
         }
 
         // STEP 5: Merge PDFs & Upload
-        const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
-
         if (pdfPaths.length > 0) {
+            const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
             await mergePdfs(pdfPaths, mergedPdfPath);
 
             const filePath = `templates/marksheets/${schoolId}/result/${batchId}_${jobId}.pdf`;
@@ -252,26 +243,35 @@ async function GenerateOdtFile() {
             formData.append('ContentType', 'application/pdf');
             formData.append('jobId', jobId);
 
-            console.log(`📤 Uploading merged PDF to: ${filePath}`);
+            console.log(`📤 Uploading merged PDF for ${pdfPaths.length} student(s) to: ${filePath}`);
             const uploadRes = await fetch('https://demoschool.edusparsh.com/api/uploadfileToDigitalOcean', {
                 method: 'POST',
                 headers: formData.getHeaders(),
                 body: formData,
             });
 
-            if (!uploadRes.ok) {
-                const errorData = await uploadRes.text();
-                throw new Error(`File upload API failed: ${errorData || uploadRes.statusText}`);
-            }
+            if (!uploadRes.ok)
+                throw new Error(`File upload API failed: ${await uploadRes.text()}`);
 
             console.log("✅ File uploaded successfully. Updating job_history...");
-            await updateJobHistory(jobId, schoolId, { file_path: filePath, status: true });
+            const jobNotes = failedStudents.length > 0
+                ? `Completed. ${pdfPaths.length}/${students.length} success. Failed: ${failedStudents.join(', ')}`
+                : `Completed successfully for all ${students.length} students.`;
+            await updateJobHistory(jobId, schoolId, { file_path: filePath, status: true, notes: jobNotes.substring(0, 500) });
             console.log('✅ job_history updated successfully.');
         } else {
-            console.log('⚠️ No PDFs were generated to merge.');
+            console.warn('⚠️ No PDFs were generated to merge.');
+            const noPdfsNote = failedStudents.length === students.length && students.length > 0
+                ? `Failed: All ${failedStudents.length} students failed generation.`
+                : "Completed: No valid data to generate PDFs from.";
+            await updateJobHistory(jobId, schoolId, { status: false, notes: noPdfsNote });
         }
 
-        console.log("🎉 Marksheets generated and uploaded successfully.");
+        if (failedStudents.length > 0) {
+            console.warn(`\n⚠️ Process finished, but ${failedStudents.length} student(s) failed to generate: ${failedStudents.join(', ')}`);
+        }
+
+        console.log("🎉 Marksheet generation process finished.");
 
     } catch (error) {
         console.error('❌ FATAL ERROR during marksheet generation:', error.message || error);
