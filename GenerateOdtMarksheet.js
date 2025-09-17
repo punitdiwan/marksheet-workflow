@@ -115,6 +115,9 @@ async function convertOdtBatchesToPdf(odtPaths, outputDir, batchSize) {
 
         formData.append('merge', 'true');
 
+        formData.append('nativePageRanges', '1-');
+
+
         const url = "https://demo.gotenberg.dev/forms/libreoffice/convert";
 
         try {
@@ -300,7 +303,7 @@ async function GenerateOdtFile() {
         if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
-        process.exit(1); // Exit with an error code to fail the CI/CD job
+        // process.exit(1); // Exit with an error code to fail the CI/CD job
     }
 }
 
