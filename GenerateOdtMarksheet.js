@@ -43,35 +43,6 @@ async function downloadFile(url) {
     return Buffer.from(await res.arrayBuffer());
 }
 
-// ✨ UPDATED Function: More robust error handling for LibreOffice conversion
-async function convertOdtToPdf(odtPath, outputDir) {
-    const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
-    try {
-        console.log(`🔄 Running conversion for: ${path.basename(odtPath)}`);
-        const { stdout, stderr } = await execPromise(command);
-
-        if (stderr) {
-            console.warn(`[LibreOffice STDERR for ${path.basename(odtPath)}]:`, stderr);
-        }
-
-        const pdfPath = path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
-        if (fs.existsSync(pdfPath)) {
-            return pdfPath;
-        } else {
-            console.warn(`⚠️ PDF not generated for ${path.basename(odtPath)}`);
-            return null;
-        }
-
-    } catch (error) {
-        console.error(`❌ LibreOffice command failed for ${path.basename(odtPath)}.`);
-        console.error('--- STDOUT ---');
-        console.error(error.stdout);
-        console.error('--- STDERR ---');
-        console.error(error.stderr);
-        return null;
-    }
-}
-
 async function mergePdfs(pdfPaths, outputPath) {
     if (pdfPaths.length === 0) return;
     const command = `pdftk ${pdfPaths.map(p => `"${p}"`).join(' ')} cat output "${outputPath}"`;
@@ -203,7 +174,7 @@ async function GenerateOdtFile() {
         await fs.promises.writeFile(templatePath, templateBuffer);
         console.log(`✅ Template saved locally to: ${templatePath}`);
 
-        // STEP 4: Render ODT & convert to PDF
+        // STEP 4: Render directly to PDF using Carbone
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             let transformedData = transformedStudents[i];
@@ -238,19 +209,17 @@ async function GenerateOdtFile() {
                 console.log(`---------------------------------------------------\n\n`);
             }
 
-            const odtReport = await carboneRender(templatePath, transformedData);
+            try {
+                const pdfReport = await carboneRender(templatePath, transformedData, { convertTo: 'pdf' });
 
-            const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
-            const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
-            await fs.promises.writeFile(odtFilename, odtReport);
+                const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
+                const pdfPath = path.join(outputDir, `${fileSafeName}.pdf`);
+                await fs.promises.writeFile(pdfPath, pdfReport);
 
-            const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
-
-            if (pdfPath) {
                 pdfPaths.push(pdfPath);
-                console.log(`✅ Successfully converted PDF for ${student.full_name}`);
-            } else {
-                console.warn(`⚠️ Failed to generate PDF for ${student.full_name}`);
+                console.log(`✅ Successfully generated PDF for ${student.full_name}`);
+            } catch (renderError) {
+                console.warn(`⚠️ Failed to generate PDF for ${student.full_name}:`, renderError.message);
             }
         }
 
@@ -289,7 +258,7 @@ async function GenerateOdtFile() {
             console.log('✅ job_history updated successfully.');
         } else {
             console.log('⚠️ No PDFs were generated to merge.');
-            await updateJobHistory(jobId, schoolId, { status: false, notes: "No valid PDFs generated due to conversion issues." });
+            await updateJobHistory(jobId, schoolId, { status: false, notes: "No valid PDFs generated due to rendering issues." });
         }
 
         console.log("🎉 Marksheets generated and uploaded successfully.");
