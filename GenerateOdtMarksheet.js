@@ -49,28 +49,37 @@ async function convertOdtToPdf(odtPath, outputDir) {
         const absOdtPath = path.resolve(odtPath);
         const absOutputDir = path.resolve(outputDir);
 
-        // Ensure output dir exists
+        if (!fs.existsSync(absOdtPath)) {
+            throw new Error(`ODT file not found: ${absOdtPath}`);
+        }
+
         if (!fs.existsSync(absOutputDir)) {
             fs.mkdirSync(absOutputDir, { recursive: true });
         }
 
-        const cmd = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtFile}"`;
-        console.log(`⚙️ Executing: ${cmd}`);
+        console.log(`🔄 Running conversion for: ${path.basename(absOdtPath)}`);
 
+        const cmd = `libreoffice --headless --convert-to pdf --outdir "${absOutputDir}" "${absOdtPath}"`;
         const { stdout, stderr } = await execPromise(cmd, { timeout: 20000 });
 
         if (stdout) console.log(`[LibreOffice STDOUT]: ${stdout.trim()}`);
         if (stderr) console.error(`[LibreOffice STDERR]: ${stderr.trim()}`);
 
-        const pdfPath = path.join(absOutputDir, path.basename(absOdtPath).replace(/\.odt$/i, ".pdf"));
+        const pdfPath = path.join(
+            absOutputDir,
+            path.basename(absOdtPath).replace(/\.odt$/i, ".pdf")
+        );
 
         if (!fs.existsSync(pdfPath)) {
             throw new Error(`PDF not found after conversion: ${pdfPath}`);
         }
 
+        const stats = await fs.promises.stat(pdfPath);
+        console.log(`✅ PDF generated: ${pdfPath} (${stats.size} bytes)`);
+
         return pdfPath;
     } catch (err) {
-        console.error(`❌ LibreOffice conversion error:`, err.message);
+        console.error("❌ LibreOffice conversion error:", err.message);
         throw err;
     }
 }
