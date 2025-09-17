@@ -60,12 +60,14 @@ async function convertOdtToPdf(odtPath, outputDir) {
         console.log(`🔄 Uploading ${path.basename(absOdtPath)} to Gotenberg API for conversion...`);
 
         const formData = new FormData();
-        formData.append("files", fs.createReadStream(absOdtPath));
-        formData.append("merge", "true"); // ensures PDF output
+        formData.append("files", fs.createReadStream(absOdtPath), {
+            filename: path.basename(absOdtPath),
+            contentType: "application/vnd.oasis.opendocument.text",
+        });
 
-        // --- Use Demo Gotenberg server (replace with your own if needed) ---
+        // --- Gotenberg LibreOffice API endpoint ---
         const url = "https://demo.gotenberg.dev/forms/libreoffice/convert";
-        // const url = "http://yourserver:3000/forms/libreoffice/convert";
+        // If you run your own Gotenberg server, replace with: http://localhost:3000/forms/libreoffice/convert
 
         const response = await axios.post(url, formData, {
             headers: formData.getHeaders(),
