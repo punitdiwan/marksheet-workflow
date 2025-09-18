@@ -179,6 +179,8 @@ async function GenerateOdtFile() {
         const studentResponseJson = await studentResponse.json();
         let students = studentResponseJson.students || studentResponseJson.data || [];
 
+        console.log("students data from cce marks api", students[0]);
+
         if (studentIdsInput) {
             const requestedStudentIds = new Set(studentIdsInput.split(','));
             console.log(`API returned ${students.length} students. Now filtering for the ${requestedStudentIds.size} requested student(s).`);
