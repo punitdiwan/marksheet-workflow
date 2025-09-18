@@ -1,5 +1,5 @@
 // =================================================================
-//          GenerateOdtMarksheet.js (Refactored - Batch Processing)
+//          GenerateOdtMarksheet.js (Refactored - API Driven + Photos)
 // =================================================================
 
 const fs = require('fs');
@@ -10,12 +10,11 @@ const fetch = require('node-fetch');
 const carbone = require('carbone');
 const FormData = require('form-data');
 require('dotenv').config();
-const axios = require("axios");
+
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
 
 // --- UTILITY FUNCTIONS ---
-
 async function updateJobHistory(jobId, schoolId, payload) {
     try {
         const jobUpdatePayload = {
@@ -44,17 +43,36 @@ async function downloadFile(url) {
     return Buffer.from(await res.arrayBuffer());
 }
 
+// ✨ UPDATED Function: More robust error handling for LibreOffice conversion
+async function convertOdtToPdf(odtPath, outputDir) {
+    const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
+    try {
+        console.log(`🔄 Running conversion for: ${path.basename(odtPath)}`);
+        const { stdout, stderr } = await execPromise(command);
+
+        if (stderr) {
+            console.warn(`[LibreOffice STDERR for ${path.basename(odtPath)}]:`, stderr);
+        }
+
+        return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
+
+    } catch (error) {
+        console.error(`❌ LibreOffice command failed for ${path.basename(odtPath)}.`);
+        console.error('--- STDOUT ---');
+        console.error(error.stdout);
+        console.error('--- STDERR ---');
+        console.error(error.stderr);
+        throw new Error(`LibreOffice conversion failed. See logs above.`);
+    }
+}
+
 async function mergePdfs(pdfPaths, outputPath) {
     if (pdfPaths.length === 0) return;
-    if (pdfPaths.length === 1) {
-        // If there's only one PDF, just copy it instead of running pdftk
-        await fs.promises.copyFile(pdfPaths[0], outputPath);
-        return;
-    }
     const command = `pdftk ${pdfPaths.map(p => `"${p}"`).join(' ')} cat output "${outputPath}"`;
     await execPromise(command);
 }
 
+// 🔥 Fetch image and convert to base64
 async function fetchImageAsBase64(url) {
     try {
         const res = await fetch(url);
@@ -91,71 +109,6 @@ function cleanData(data) {
     return data;
 }
 
-/**
- * Converts batches of ODT files to merged PDFs using the Gotenberg API.
- * @param {string[]} odtPaths - An array of paths to the ODT files.
- * @param {string} outputDir - The directory to save the merged PDFs.
- * @param {number} batchSize - The number of files to process in each batch.
- * @returns {Promise<string[]>} A promise that resolves to an array of paths to the generated batch PDFs.
- */
-async function convertOdtBatchesToPdf(odtPaths, outputDir, batchSize) {
-    const generatedBatchPdfPaths = [];
-    console.log(`\n🚀 Starting batch conversion of ${odtPaths.length} ODT files in batches of ${batchSize}...`);
-
-    for (let i = 0; i < odtPaths.length; i += batchSize) {
-        const batchNumber = i / batchSize + 1;
-        const batchOdtPaths = odtPaths.slice(i, i + batchSize);
-        console.log(`\n🔄 Processing Batch #${batchNumber} with ${batchOdtPaths.length} files...`);
-
-        const formData = new FormData();
-        batchOdtPaths.forEach(odtPath => {
-            formData.append('files', fs.createReadStream(odtPath));
-            console.log(`   - Adding ${path.basename(odtPath)} to batch.`);
-        });
-
-        formData.append('merge', 'true');
-
-        formData.append('nativePageRanges', '1-');
-
-
-        const url = "https://demo.gotenberg.dev/forms/libreoffice/convert";
-
-        try {
-            const response = await axios.post(url, formData, {
-                headers: formData.getHeaders(),
-                responseType: "stream",
-                timeout: 180000, // 3 minutes timeout for larger batches
-            });
-
-            const pdfPath = path.join(outputDir, `batch_output_${batchNumber}.pdf`);
-            const writer = fs.createWriteStream(pdfPath);
-            response.data.pipe(writer);
-
-            await new Promise((resolve, reject) => {
-                writer.on("finish", resolve);
-                writer.on("error", reject);
-            });
-
-            const stats = await fs.promises.stat(pdfPath);
-            console.log(`✅ Batch #${batchNumber} successful! PDF created: ${pdfPath} (${stats.size} bytes)`);
-            generatedBatchPdfPaths.push(pdfPath);
-
-        } catch (err) {
-            console.error(`❌ ERROR processing Batch #${batchNumber}. This batch will be skipped.`);
-            if (err.response && err.response.data && typeof err.response.data.pipe === 'function') {
-                let errorBody = '';
-                for await (const chunk of err.response.data) {
-                    errorBody += chunk.toString('utf8');
-                }
-                console.error("   - Gotenberg API Error:", errorBody);
-            } else {
-                console.error("   - Axios/Network Error:", err.message);
-            }
-        }
-    }
-    return generatedBatchPdfPaths;
-}
-
 // --- MAIN FUNCTION ---
 async function GenerateOdtFile() {
     let outputDir = '';
@@ -180,8 +133,9 @@ async function GenerateOdtFile() {
 
         outputDir = path.join(process.cwd(), 'output');
         await fs.promises.mkdir(outputDir, { recursive: true });
+        const pdfPaths = [];
 
-        // --- STEP 1: Fetch student marks ---
+        // STEP 1: Fetch student marks
         const marksPayload = {
             _school: schoolId,
             batchId: [batchId],
@@ -199,86 +153,131 @@ async function GenerateOdtFile() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(marksPayload),
         });
+
         if (!studentResponse.ok) throw new Error(`Failed to fetch student data: ${await studentResponse.text()}`);
+
         const studentResponseJson = await studentResponse.json();
-        let students = (studentResponseJson.students || studentResponseJson.data || []).filter(s => s && s.student_id);
+        let students = studentResponseJson.students || studentResponseJson.data || [];
+
+        if (studentIdsInput) {
+            const requestedStudentIds = new Set(studentIdsInput.split(','));
+            console.log(`API returned ${students.length} students. Now filtering for the ${requestedStudentIds.size} requested student(s).`);
+            students = students.filter(student => student && student.student_id && requestedStudentIds.has(student.student_id));
+        }
+
+        // 🛡️ Additional validation
+        students = students.filter(s => s && typeof s === 'object');           // filter null / non-objects
+        students = students.filter(s => s.student_id);                        // ensure student_id exists
+
         if (students.length === 0) {
-            console.warn("⚠️ No valid students found. Exiting gracefully.");
-            await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No students found." });
+            console.warn("⚠️ No valid students found matching the criteria. Exiting gracefully.");
+            await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No valid students found matching the criteria." });
             return;
         }
+
+        // Inject _uid
         students = students.map(s => ({ ...s, _uid: s.student_id }));
+
         console.log(`✅ Found and will process ${students.length} student(s).`);
 
-        // --- STEP 2: Call config + transformation API ---
-        console.log("📡 Fetching marksheet config + transformed data...");
+        // STEP 2: Call config + transformation API
+        console.log("📡 Fetching marksheet config + transformed data from API...");
+        console.log("\n🔍 Debugging students before sending to marksheetdataodt API:");
+        console.dir(students, { depth: null });
+
         const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ _school: schoolId, groupIds, batchId, studentIds: students.map(s => s.student_id), students }),
+            body: JSON.stringify({
+                _school: schoolId,
+                groupIds,
+                batchId,
+                studentIds: students.map(s => s.student_id),
+                students,
+            }),
         });
-        if (!apiRes.ok) throw new Error(`Config API failed: ${await apiRes.text()}`);
-        const { transformedStudents } = await apiRes.json();
-        if (!transformedStudents) throw new Error(`Config API failed: missing transformedStudents.`);
+
+        if (!apiRes.ok) {
+            const bodyText = await apiRes.text();
+            throw new Error(`Config API failed: ${bodyText}`);
+        }
+        const apiJson = await apiRes.json();
+
+        if (!apiJson.transformedStudents) {
+            console.error("❗️ API response missing `transformedStudents` field. Full response:");
+            console.dir(apiJson, { depth: null });
+            throw new Error(`Config API failed: missing transformedStudents in response.`);
+        }
+
+        const { transformedStudents } = apiJson;
+        console.log("transformedStudents_mkp", transformedStudents[0]);
         console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
 
-        // --- STEP 3: Download template ---
+        // STEP 3: Download template
         console.log("📥 Downloading template...");
         const templateBuffer = await downloadFile(templateUrl);
         const templatePath = path.join(outputDir, 'template.odt');
         await fs.promises.writeFile(templatePath, templateBuffer);
-        console.log(`✅ Template saved locally: ${templatePath}`);
+        console.log(`✅ Template saved locally to: ${templatePath}`);
 
-        // --- STEP 4: Generate ALL ODT files first ---
-        console.log('\n--- Generating all individual ODT files ---');
-        const odtPaths = [];
+        // STEP 4: Render ODT & convert to PDF
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             let transformedData = transformedStudents[i];
 
             transformedData = cleanData(transformedData);
+
+            // 🔥 Embed Base64 photo into transformed data
             if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
                 transformedData.photo = await fetchImageAsBase64(student.photo);
             }
 
-            console.log(`📝 Generating ODT for: ${student.full_name}`);
-            try {
-                const odtReport = await carboneRender(templatePath, transformedData);
-                const fileSafeName = student.full_name?.replace(/[\s/\\?%*:|"<>.]+/g, '_') || `student_${Date.now()}`;
-                const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
-                await fs.promises.writeFile(odtFilename, odtReport);
-                odtPaths.push(odtFilename);
-            } catch (err) {
-                console.error(`⚠️ Failed to generate ODT for ${student.full_name}: ${err.message}`);
-                await updateJobHistory(jobId, schoolId, { status: false, notes: `ODT failed for ${student.full_name}: ${err.message}`.substring(0, 200) });
+            console.log(`📝 Processing student: ${student.full_name}`);
+
+            if (i === 0) {
+                console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
+                console.log(JSON.stringify(transformedData, null, 2));
+                console.log(`---------------------------------------------------\n\n`);
             }
+
+            const odtReport = await carboneRender(templatePath, transformedData);
+
+            const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
+            const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
+            await fs.promises.writeFile(odtFilename, odtReport);
+
+            const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
+
+            if (!fs.existsSync(pdfPath)) {
+                console.error(`\n\n--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
+                console.error(JSON.stringify(transformedData, null, 2));
+                console.error(`------------------------------------------------------------------\n\n`);
+                throw new Error(`PDF generation failed for "${student.full_name}". Output file not found at: ${pdfPath}.`);
+            }
+
+            console.log(`✅ Successfully converted PDF for ${student.full_name}`);
+            pdfPaths.push(pdfPath);
         }
 
-        if (odtPaths.length === 0) {
-            throw new Error("❌ No ODT files were successfully generated. Cannot proceed.");
-        }
-
-        // --- STEP 5: Convert ODTs to PDFs in Batches ---
-        const batchPdfPaths = await convertOdtBatchesToPdf(odtPaths, outputDir, 4); // Adjust batch size if needed
-
-        // --- STEP 6: Merge Batch PDFs & Upload ---
+        // STEP 5: Merge PDFs & Upload
         const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
 
-        if (batchPdfPaths.length > 0) {
-            console.log(`\n🧩 Merging ${batchPdfPaths.length} batch PDF(s) into final document...`);
-            await mergePdfs(batchPdfPaths, mergedPdfPath);
-            console.log(`✅ Final merged PDF created at: ${mergedPdfPath}`);
+        if (pdfPaths.length > 0) {
+            await mergePdfs(pdfPaths, mergedPdfPath);
 
             const filePath = `templates/marksheets/${schoolId}/result/${batchId}_${jobId}.pdf`;
             const fileBuffer = await fs.promises.readFile(mergedPdfPath);
             const formData = new FormData();
 
-            formData.append('photo', fileBuffer, { filename: 'merged_output.pdf', contentType: 'application/pdf' });
+            formData.append('photo', fileBuffer, {
+                filename: 'merged_output.pdf',
+                contentType: 'application/pdf'
+            });
             formData.append('key', filePath);
             formData.append('ContentType', 'application/pdf');
             formData.append('jobId', jobId);
 
-            console.log(`📤 Uploading final merged PDF to: ${filePath}`);
+            console.log(`📤 Uploading merged PDF to: ${filePath}`);
             const uploadRes = await fetch('https://demoschool.edusparsh.com/api/uploadfileToDigitalOcean', {
                 method: 'POST',
                 headers: formData.getHeaders(),
@@ -286,24 +285,25 @@ async function GenerateOdtFile() {
             });
 
             if (!uploadRes.ok) {
-                throw new Error(`File upload API failed: ${await uploadRes.text()}`);
+                const errorData = await uploadRes.text();
+                throw new Error(`File upload API failed: ${errorData || uploadRes.statusText}`);
             }
 
-            console.log("✅ File uploaded. Updating job_history...");
+            console.log("✅ File uploaded successfully. Updating job_history...");
             await updateJobHistory(jobId, schoolId, { file_path: filePath, status: true });
-            console.log('✅ job_history updated.');
+            console.log('✅ job_history updated successfully.');
         } else {
-            throw new Error('❌ No PDFs were generated from the batch conversion process. Upload failed.');
+            console.log('⚠️ No PDFs were generated to merge.');
         }
 
-        console.log("\n🎉 Marksheets generated and uploaded successfully.");
+        console.log("🎉 Marksheets generated and uploaded successfully.");
 
     } catch (error) {
         console.error('❌ FATAL ERROR during marksheet generation:', error.message || error);
         if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
-        // process.exit(1); // Exit with an error code to fail the CI/CD job
+        process.exit(1);
     }
 }
 
