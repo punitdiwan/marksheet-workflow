@@ -75,6 +75,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pdftk   
+
+      - name: Install Ghostscript
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ghostscript
+
       - name: Create output directory
         run: mkdir -p output
       - name: Run GenerateOdtMarksheet.js

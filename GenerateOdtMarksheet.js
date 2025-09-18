@@ -1,5 +1,5 @@
 // =================================================================
-//          GenerateOdtMarksheet.js (Refactored - API Driven + Photos)
+//          GenerateOdtMarksheet.js (Refactored - API Driven + Photos + Compression)
 // =================================================================
 
 const fs = require('fs');
@@ -43,7 +43,6 @@ async function downloadFile(url) {
     return Buffer.from(await res.arrayBuffer());
 }
 
-// ✨ UPDATED Function: More robust error handling for LibreOffice conversion
 async function convertOdtToPdf(odtPath, outputDir) {
     const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
     try {
@@ -72,7 +71,28 @@ async function mergePdfs(pdfPaths, outputPath) {
     await execPromise(command);
 }
 
-// 🔥 Fetch image and convert to base64
+// ✨ NEW Function: Compress PDF using Ghostscript
+async function compressPdf(inputPath, outputPath) {
+    // We use the 'ebook' setting, which provides a great balance
+    // between file size reduction and quality preservation for on-screen viewing.
+    const command = `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outputPath}" "${inputPath}"`;
+    try {
+        console.log(`🗜️  Compressing PDF: ${path.basename(inputPath)}`);
+        await execPromise(command);
+        console.log(`✅ Compression successful. Output: ${outputPath}`);
+    } catch (error) {
+        console.error(`❌ Ghostscript compression failed for ${path.basename(inputPath)}.`);
+        console.error('--- STDOUT ---');
+        console.error(error.stdout);
+        console.error('--- STDERR ---');
+        console.error(error.stderr);
+        // Fallback: If compression fails, we can try to use the original file.
+        // For now, we'll throw an error to make the issue visible.
+        throw new Error(`Ghostscript compression failed. See logs above.`);
+    }
+}
+
+
 async function fetchImageAsBase64(url) {
     try {
         const res = await fetch(url);
@@ -165,9 +185,8 @@ async function GenerateOdtFile() {
             students = students.filter(student => student && student.student_id && requestedStudentIds.has(student.student_id));
         }
 
-        // 🛡️ Additional validation
-        students = students.filter(s => s && typeof s === 'object');           // filter null / non-objects
-        students = students.filter(s => s.student_id);                        // ensure student_id exists
+        students = students.filter(s => s && typeof s === 'object');
+        students = students.filter(s => s.student_id);
 
         if (students.length === 0) {
             console.warn("⚠️ No valid students found matching the criteria. Exiting gracefully.");
@@ -175,16 +194,12 @@ async function GenerateOdtFile() {
             return;
         }
 
-        // Inject _uid
         students = students.map(s => ({ ...s, _uid: s.student_id }));
 
         console.log(`✅ Found and will process ${students.length} student(s).`);
 
         // STEP 2: Call config + transformation API
         console.log("📡 Fetching marksheet config + transformed data from API...");
-        console.log("\n🔍 Debugging students before sending to marksheetdataodt API:");
-        console.dir(students, { depth: null });
-
         const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -196,21 +211,15 @@ async function GenerateOdtFile() {
                 students,
             }),
         });
-
         if (!apiRes.ok) {
             const bodyText = await apiRes.text();
             throw new Error(`Config API failed: ${bodyText}`);
         }
-        const apiJson = await apiRes.json();
-
-        if (!apiJson.transformedStudents) {
-            console.error("❗️ API response missing `transformedStudents` field. Full response:");
-            console.dir(apiJson, { depth: null });
+        const { transformedStudents } = await apiRes.json();
+        if (!
+            transformedStudents) {
             throw new Error(`Config API failed: missing transformedStudents in response.`);
         }
-
-        const { transformedStudents } = apiJson;
-        console.log("transformedStudents_mkp", transformedStudents[0]);
         console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
 
         // STEP 3: Download template
@@ -224,49 +233,46 @@ async function GenerateOdtFile() {
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             let transformedData = transformedStudents[i];
-
             transformedData = cleanData(transformedData);
-
-            // 🔥 Embed Base64 photo into transformed data
             if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
                 transformedData.photo = await fetchImageAsBase64(student.photo);
             }
-
             console.log(`📝 Processing student: ${student.full_name}`);
-
-            if (i === 0) {
-                console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
-                console.log(JSON.stringify(transformedData, null, 2));
-                console.log(`---------------------------------------------------\n\n`);
-            }
-
             const odtReport = await carboneRender(templatePath, transformedData);
-
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             await fs.promises.writeFile(odtFilename, odtReport);
-
             const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
-
             if (!fs.existsSync(pdfPath)) {
                 console.error(`\n\n--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
                 console.error(JSON.stringify(transformedData, null, 2));
                 console.error(`------------------------------------------------------------------\n\n`);
                 throw new Error(`PDF generation failed for "${student.full_name}". Output file not found at: ${pdfPath}.`);
             }
-
             console.log(`✅ Successfully converted PDF for ${student.full_name}`);
             pdfPaths.push(pdfPath);
         }
 
-        // STEP 5: Merge PDFs & Upload
+        // STEP 5: Merge, COMPRESS, & Upload
         const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
+        const compressedPdfPath = path.join(outputDir, 'merged_compressed.pdf'); // New path for compressed file
 
         if (pdfPaths.length > 0) {
+            console.log('🔗 Merging all generated PDFs into one file...');
             await mergePdfs(pdfPaths, mergedPdfPath);
+            console.log(`✅ Merged PDF created at: ${mergedPdfPath}`);
+
+            // 🔥 NEW COMPRESSION STEP
+            await compressPdf(mergedPdfPath, compressedPdfPath);
+
+            // Optional: Log file size comparison
+            const originalSize = (await fs.promises.stat(mergedPdfPath)).size / (1024 * 1024);
+            const compressedSize = (await fs.promises.stat(compressedPdfPath)).size / (1024 * 1024);
+            console.log(`📊 Compression Results: Original size: ${originalSize.toFixed(2)} MB, Compressed size: ${compressedSize.toFixed(2)} MB`);
+
 
             const filePath = `templates/marksheets/${schoolId}/result/${batchId}_${jobId}.pdf`;
-            const fileBuffer = await fs.promises.readFile(mergedPdfPath);
+            const fileBuffer = await fs.promises.readFile(compressedPdfPath);
             const formData = new FormData();
 
             formData.append('photo', fileBuffer, {
@@ -277,7 +283,7 @@ async function GenerateOdtFile() {
             formData.append('ContentType', 'application/pdf');
             formData.append('jobId', jobId);
 
-            console.log(`📤 Uploading merged PDF to: ${filePath}`);
+            console.log(`📤 Uploading compressed PDF to: ${filePath}`);
             const uploadRes = await fetch('https://demoschool.edusparsh.com/api/uploadfileToDigitalOcean', {
                 method: 'POST',
                 headers: formData.getHeaders(),
