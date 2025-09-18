@@ -303,7 +303,7 @@ async function GenerateOdtFile() {
         if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
-        process.exit(1);
+        // process.exit(1);
     }
 }
 
