@@ -238,6 +238,13 @@ async function GenerateOdtFile() {
                 transformedData.photo = await fetchImageAsBase64(student.photo);
             }
             console.log(`📝 Processing student: ${student.full_name}`);
+
+            if (i === 0) {
+                console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
+                console.log(JSON.stringify(transformedData, null, 2));
+                console.log(`---------------------------------------------------\n\n`);
+            }
+
             const odtReport = await carboneRender(templatePath, transformedData);
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
