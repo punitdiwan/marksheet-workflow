@@ -14,7 +14,7 @@ require('dotenv').config();
 carbone.addFormatters(carbone.formatters);
 
 const execPromise = util.promisify(exec);
-const carboneRender = util.promisify(carbone.render);
+const carboneRender = util.promisify(carbone.render.bind(carbone));
 
 // --- UTILITY FUNCTIONS ---
 async function updateJobHistory(jobId, schoolId, payload) {
@@ -278,8 +278,12 @@ async function GenerateOdtFile() {
             console.log(`📝 Processing student: ${student.full_name}`);
 
             if (i === 0) {
-                console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
-                console.log(JSON.stringify(dataForCarbone, null, 2));
+                console.log(`\n\n--- DEBUG: COMBINED DATA FOR CARBONE (${student.full_name}) ---`);
+                const logData = { ...dataForCarbone };
+                if (logData.photo && logData.photo.length > 100) {
+                    logData.photo = logData.photo.substring(0, 100) + '... [TRUNCATED]';
+                }
+                console.log(JSON.stringify(logData, null, 2));
                 console.log(`---------------------------------------------------\n\n`);
             }
 
