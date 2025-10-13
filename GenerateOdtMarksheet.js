@@ -11,6 +11,8 @@ const carbone = require('carbone');
 const FormData = require('form-data');
 require('dotenv').config();
 
+carbone.addFormatters(carbone.formatters);
+
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
 
@@ -281,11 +283,7 @@ async function GenerateOdtFile() {
                 console.log(`---------------------------------------------------\n\n`);
             }
 
-            const options = {
-                formatters: carbone.formatters
-            };
-            const odtReport = await carboneRender(templatePath, dataForCarbone, options);
-
+            const odtReport = await carboneRender(templatePath, dataForCarbone);
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             await fs.promises.writeFile(odtFilename, odtReport);
