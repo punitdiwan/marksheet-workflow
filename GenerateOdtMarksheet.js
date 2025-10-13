@@ -1,5 +1,5 @@
 // =================================================================
-//          GenerateOdtMarksheet.js (Refactored - API Driven + Photos + Compression)
+//          GenerateOdtMarksheet.js (Refactored - API Driven + Photos + Compression + School Details)
 // =================================================================
 
 const fs = require('fs');
@@ -155,6 +155,22 @@ async function GenerateOdtFile() {
         await fs.promises.mkdir(outputDir, { recursive: true });
         const pdfPaths = [];
 
+        // ✨ STEP 0: NEW - Fetch School Details
+        console.log("🏫 Fetching school details...");
+        const schoolDetailsPayload = { school_id: schoolId };
+        const schoolDetailsResponse = await fetch('https://demoschool.edusparsh.com/api/get_School_Detail', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(schoolDetailsPayload),
+        });
+        if (!schoolDetailsResponse.ok) {
+            throw new Error(`Failed to fetch school details: ${await schoolDetailsResponse.text()}`);
+        }
+        // Assuming the API returns a single object with school data. Clean it once.
+        const schoolDetails = cleanData(await schoolDetailsResponse.json());
+        console.log("✅ School details fetched successfully.");
+
+
         // STEP 1: Fetch student marks
         const marksPayload = {
             _school: schoolId,
@@ -239,22 +255,30 @@ async function GenerateOdtFile() {
             if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
                 transformedData.photo = await fetchImageAsBase64(student.photo);
             }
+
+            // ✨ NEW: Combine student's transformed data with the general school details
+            const dataForCarbone = {
+                ...transformedData,
+                school: schoolDetails
+            };
+
             console.log(`📝 Processing student: ${student.full_name}`);
 
             if (i === 0) {
                 console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
-                console.log(JSON.stringify(transformedData, null, 2));
+                console.log(JSON.stringify(dataForCarbone, null, 2));
                 console.log(`---------------------------------------------------\n\n`);
             }
 
-            const odtReport = await carboneRender(templatePath, transformedData);
+            const odtReport = await carboneRender(templatePath, dataForCarbone);
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             await fs.promises.writeFile(odtFilename, odtReport);
             const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
+
             if (!fs.existsSync(pdfPath)) {
                 console.error(`\n\n--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
-                console.error(JSON.stringify(transformedData, null, 2));
+                console.error(JSON.stringify(dataForCarbone, null, 2));
                 console.error(`------------------------------------------------------------------\n\n`);
                 throw new Error(`PDF generation failed for "${student.full_name}". Output file not found at: ${pdfPath}.`);
             }
