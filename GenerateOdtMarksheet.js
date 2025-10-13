@@ -1,5 +1,6 @@
+
 // =================================================================
-//          GenerateOdtMarksheet.js (Refactored - API Driven + Photos + Compression + School Details)
+//          GenerateOdtMarksheet.js - FIXED IMAGE HANDLING
 // =================================================================
 
 const fs = require('fs');
@@ -11,6 +12,23 @@ const carbone = require('carbone');
 const FormData = require('form-data');
 require('dotenv').config();
 
+// ✨ CRITICAL: Add custom image formatter FIRST
+carbone.addFormatters({
+    image: function (data) {
+        // Handle base64 data URIs
+        if (typeof data === 'string' && data.startsWith('data:image')) {
+            return data;
+        }
+        // Handle file paths
+        if (typeof data === 'string' && !data.startsWith('http')) {
+            return data;
+        }
+        // Return empty for invalid data
+        return '';
+    }
+});
+
+// Then add default formatters
 carbone.addFormatters(carbone.formatters);
 
 const execPromise = util.promisify(exec);
@@ -43,6 +61,29 @@ async function downloadFile(url) {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to download file: ${res.statusText}`);
     return Buffer.from(await res.arrayBuffer());
+}
+
+// ✨ IMPROVED: Download image as file instead of base64
+async function downloadImageAsFile(url, outputDir, studentId) {
+    try {
+        console.log(`📷 Downloading image for student ${studentId}...`);
+        const res = await fetch(url);
+        if (!res.ok) {
+            console.warn(`⚠️ Image download failed (${res.status}): ${url}`);
+            return null;
+        }
+
+        const buffer = Buffer.from(await res.arrayBuffer());
+        const ext = path.extname(new URL(url).pathname) || '.png';
+        const imagePath = path.join(outputDir, `photo_${studentId}${ext}`);
+
+        await fs.promises.writeFile(imagePath, buffer);
+        console.log(`✅ Image saved: ${imagePath}`);
+        return imagePath;
+    } catch (err) {
+        console.warn(`⚠️ Could not download image for ${studentId}:`, err.message);
+        return null;
+    }
 }
 
 async function convertOdtToPdf(odtPath, outputDir) {
@@ -93,31 +134,6 @@ async function compressPdf(inputPath, outputPath) {
         throw new Error(`Ghostscript compression failed. See logs above.`);
     }
 }
-
-
-async function fetchImageAsBase64(url) {
-    try {
-        const res = await fetch(url);
-        if (!res.ok) {
-            throw new Error(`Failed to fetch image (status ${res.status}): ${url}`);
-        }
-
-        const mimeType = res.headers.get('content-type');
-
-        if (!mimeType || !mimeType.startsWith('image/')) {
-            console.warn(`⚠️ URL did not return a valid image content-type. Got: "${mimeType}". URL: ${url}`);
-            return null; // Skip this image
-        }
-
-        const buffer = Buffer.from(await res.arrayBuffer());
-        return `data:${mimeType};base64,${buffer.toString("base64")}`;
-
-    } catch (err) {
-        console.warn("⚠️ Could not fetch photo for student:", url, err.message);
-        return null;
-    }
-}
-
 
 function cleanData(data) {
     if (data === null || data === undefined || (typeof data === 'number' && isNaN(data))) {
@@ -263,13 +279,20 @@ async function GenerateOdtFile() {
         // STEP 4: Render ODT & convert to PDF
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
-            let transformedData = transformedStudents[i];
-            transformedData = cleanData(transformedData);
+            let transformedData = cleanData(transformedStudents[i]);
+
+            // ✨ FIXED: Download image as file instead of base64
             if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
-                transformedData.photo = await fetchImageAsBase64(student.photo);
+                const photoPath = await downloadImageAsFile(student.photo, outputDir, student.student_id);
+                if (photoPath) {
+                    transformedData.photo = photoPath;
+                } else {
+                    transformedData.photo = ''; // Empty if download failed
+                }
+            } else {
+                transformedData.photo = '';
             }
 
-            // ✨ NEW: Combine student's transformed data with the general school details
             const dataForCarbone = {
                 ...transformedData,
                 school: schoolDetails
