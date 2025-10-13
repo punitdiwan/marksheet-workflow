@@ -4,6 +4,7 @@
   "type": "commonjs",
   "dependencies": {
     "@supabase/supabase-js": "^2.55.0",
+    "adm-zip": "^0.5.16",
     "asposewordscloud": "^25.1.0",
     "axios": "^1.8.1",
     "carbone": "^3.5.6",

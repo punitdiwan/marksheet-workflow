@@ -1,5 +1,5 @@
 // =================================================================
-//          GenerateOdtMarksheet.js (Final Corrected Version)
+//          GenerateOdtMarksheet.js (Direct Image Injection Method)
 // =================================================================
 
 const fs = require('fs');
@@ -9,25 +9,10 @@ const util = require('util');
 const fetch = require('node-fetch');
 const carbone = require('carbone');
 const FormData = require('form-data');
+const AdmZip = require('adm-zip'); // <-- NEW DEPENDENCY
 require('dotenv').config();
 
-// Register all of Carbone's built-in formatters (like :image) globally.
-carbone.addFormatters({
-    image: function (data) {
-        // Handle base64 data URIs
-        if (typeof data === 'string' && data.startsWith('data:image')) {
-            return data;
-        }
-        // Handle file paths
-        if (typeof data === 'string' && !data.startsWith('http')) {
-            return data;
-        }
-        // Return empty for invalid data
-        return '';
-    }
-});
-carbone.addFormatters(carbone.formatters);
-
+// We don't need addFormatters or a special render function anymore for images
 const execPromise = util.promisify(exec);
 
 // --- UTILITY FUNCTIONS ---
@@ -160,8 +145,9 @@ async function GenerateOdtFile() {
     const schoolId = process.env.SCHOOL_ID;
 
     try {
-        console.log("🚀 Starting dynamic marksheet generation with Carbone...");
+        console.log("🚀 Starting dynamic marksheet generation with Direct Image Injection...");
 
+        // --- All initial setup and API calls are the same ---
         const groupid = process.env.GROUP_ID;
         const batchId = process.env.BATCH_ID;
         const courseId = process.env.COURSE_ID;
@@ -245,34 +231,53 @@ async function GenerateOdtFile() {
         console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
 
         console.log("📥 Downloading template...");
+        console.log("📥 Downloading main template buffer...");
         const templateBuffer = await downloadFile(templateUrl);
-        const templatePath = path.join(outputDir, 'template.odt');
-        await fs.promises.writeFile(templatePath, templateBuffer);
-        console.log(`✅ Template saved locally to: ${templatePath}`);
+        console.log(`✅ Main template downloaded.`);
 
+        // STEP 4: Render ODT & convert to PDF (THE LOGIC HERE CHANGES SIGNIFICANTLY)
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             let transformedData = cleanData(transformedStudents[i]);
 
-            if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
-                transformedData.photo = await fetchImageAsBase64(student.photo);
-            }
-
+            // We no longer need the 'photo' property in the data for Carbone
             const dataForCarbone = { ...transformedData, school: schoolDetails };
 
             console.log(`📝 Processing student: ${student.full_name}`);
-            if (i === 0) {
-                console.log(`\n\n--- DEBUG: COMBINED DATA FOR CARBONE (${student.full_name}) ---`);
-                const logData = { ...dataForCarbone };
-                if (logData.photo && logData.photo.length > 100) {
-                    logData.photo = logData.photo.substring(0, 100) + '... [TRUNCATED]';
-                }
-                console.log(JSON.stringify(logData, null, 2));
-                console.log(`---------------------------------------------------\n\n`);
-            }
 
-            // Using the new robust async wrapper
-            const odtReport = await renderCarboneAsync(templatePath, dataForCarbone);
+            let finalTemplateBuffer = templateBuffer;
+            let tempStudentTemplatePath = null;
+
+            // ✨ --- NEW IMAGE INJECTION LOGIC --- ✨
+            if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
+                try {
+                    console.log(`   L 🖼️ Downloading photo for ${student.full_name}`);
+                    const photoBuffer = await downloadFile(student.photo);
+
+                    // Load the template ODT from the buffer
+                    const zip = new AdmZip(templateBuffer);
+
+                    // ❗ CRITICAL: Replace this with the actual path you found in your ODT
+                    const placeholderImagePath = "Pictures/10000001000001270000012790858076F6578204.png";
+
+                    console.log(`  L 🔄 Replacing placeholder "${placeholderImagePath}" with new photo.`);
+                    // Overwrite the placeholder file inside the zip with the new photo data
+                    zip.updateFile(placeholderImagePath, photoBuffer);
+
+                    // Get the modified ODT as a new buffer for Carbone
+                    finalTemplateBuffer = zip.toBuffer();
+
+                } catch (imgError) {
+                    console.warn(`⚠️ Could not process image for ${student.full_name}:`, imgError.message);
+                    // If image fails, we'll just use the original template buffer
+                }
+            }
+            // ✨ --- END OF NEW LOGIC --- ✨
+
+
+            // Carbone now renders the template (which already has the correct image)
+            // It only needs to fill in the text fields.
+            const odtReport = await renderCarboneAsync(finalTemplateBuffer, dataForCarbone);
 
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
@@ -280,9 +285,6 @@ async function GenerateOdtFile() {
             const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
 
             if (!fs.existsSync(pdfPath)) {
-                console.error(`\n\n--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
-                console.error(JSON.stringify(dataForCarbone, null, 2));
-                console.error(`------------------------------------------------------------------\n\n`);
                 throw new Error(`PDF generation failed for "${student.full_name}".`);
             }
 
@@ -290,6 +292,8 @@ async function GenerateOdtFile() {
             pdfPaths.push(pdfPath);
         }
 
+        // --- STEP 5: Merge, Compress, & Upload (This part is completely unchanged) ---
+        // ... [The rest of the script is identical] ...
         const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
         const compressedPdfPath = path.join(outputDir, 'merged_compressed.pdf');
         if (pdfPaths.length > 0) {
@@ -340,3 +344,12 @@ async function GenerateOdtFile() {
 
 // --- EXECUTION ---
 GenerateOdtFile();
+
+// --- OMITTED UTILITY FUNCTIONS FOR BREVITY ---
+// (Paste your existing utility functions here)
+async function updateJobHistory(jobId, schoolId, payload) { /* ... */ }
+async function downloadFile(url) { /* ... */ }
+async function convertOdtToPdf(odtPath, outputDir) { /* ... */ }
+async function mergePdfs(pdfPaths, outputPath) { /* ... */ }
+async function compressPdf(inputPath, outputPath) { /* ... */ }
+function cleanData(data) { /* ... */ }
