@@ -96,15 +96,26 @@ async function compressPdf(inputPath, outputPath) {
 async function fetchImageAsBase64(url) {
     try {
         const res = await fetch(url);
-        if (!res.ok) throw new Error(`Failed to fetch image: ${url}`);
+        if (!res.ok) {
+            throw new Error(`Failed to fetch image (status ${res.status}): ${url}`);
+        }
+
+        const mimeType = res.headers.get('content-type');
+
+        if (!mimeType || !mimeType.startsWith('image/')) {
+            console.warn(`⚠️ URL did not return a valid image content-type. Got: "${mimeType}". URL: ${url}`);
+            return null; // Skip this image
+        }
+
         const buffer = Buffer.from(await res.arrayBuffer());
-        const mimeType = url.endsWith(".png") ? "image/png" : "image/jpeg";
         return `data:${mimeType};base64,${buffer.toString("base64")}`;
+
     } catch (err) {
         console.warn("⚠️ Could not fetch photo for student:", url, err.message);
         return null;
     }
 }
+
 
 function cleanData(data) {
     if (data === null || data === undefined || (typeof data === 'number' && isNaN(data))) {
