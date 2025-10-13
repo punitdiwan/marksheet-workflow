@@ -281,7 +281,11 @@ async function GenerateOdtFile() {
                 console.log(`---------------------------------------------------\n\n`);
             }
 
-            const odtReport = await carboneRender(templatePath, dataForCarbone);
+            const options = {
+                formatters: carbone.formatters
+            };
+            const odtReport = await carboneRender(templatePath, dataForCarbone, options);
+
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             await fs.promises.writeFile(odtFilename, odtReport);
