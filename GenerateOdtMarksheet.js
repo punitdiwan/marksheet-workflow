@@ -8,10 +8,12 @@ const FormData = require('form-data');
 const yauzl = require('yauzl');
 const yazl = require('yazl');
 const sharp = require('sharp');
+const xml2js = require('xml2js');
 require('dotenv').config();
 
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
+const parseXml = util.promisify(xml2js.parseString);
 
 // --- UTILITY FUNCTIONS ---
 async function updateJobHistory(jobId, schoolId, payload) {
@@ -91,7 +93,7 @@ async function fetchImage(url) {
         if (!res.ok) throw new Error(`Failed to fetch image: ${url}`);
         const arrayBuffer = await res.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-        // Convert to JPEG to match template filename
+        // Convert to JPEG to match common template image formats
         return await sharp(buffer).jpeg().toBuffer();
     } catch (err) {
         console.warn("⚠️ Could not fetch or convert photo:", url, err.message);
@@ -114,6 +116,34 @@ async function waitForFile(filePath, retries = 5, delay = 100) {
         }
     }
     return false;
+}
+
+async function findStudentImageFilename(contentXmlPath, picturesDir) {
+    try {
+        const contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+        const parsedXml = await parseXml(contentXml);
+        // Navigate to draw:image elements
+        const drawImages = parsedXml['office:document-content']?.['office:body']?.[0]?.['office:text']?.[0]?.['draw:frame']?.flatMap(frame => frame['draw:image'] || []) || [];
+        for (const image of drawImages) {
+            const href = image['$']?.['xlink:href'];
+            if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
+                const filename = href.replace('Pictures/', '');
+                // Verify the file exists in Pictures directory
+                const filePath = path.join(picturesDir, filename);
+                try {
+                    await fs.access(filePath);
+                    return filename;
+                } catch (err) {
+                    console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory.`);
+                }
+            }
+        }
+        console.warn(`⚠️ No valid student image found in content.xml.`);
+        return null;
+    } catch (err) {
+        console.error(`❌ Failed to parse content.xml or read Pictures directory:`, err);
+        return null;
+    }
 }
 
 async function replaceImageInOdt(templatePath, student, tempDir) {
@@ -165,15 +195,23 @@ async function replaceImageInOdt(templatePath, student, tempDir) {
         return templatePath;
     }
 
-    // Replace image with the specific filename
-    const imageFilename = '100000000000010A0000010B760A19F1669E6D06.jpg';
+    // Find the student image filename from content.xml
+    const contentXmlPath = path.join(studentDir, 'content.xml');
+    const picturesDir = path.join(studentDir, 'Pictures');
+    const imageFilename = await findStudentImageFilename(contentXmlPath, picturesDir);
+    if (!imageFilename) {
+        console.warn(`⚠️ No student image found for ${student.full_name}. Using original template.`);
+        return templatePath;
+    }
+    console.log(`✅ Found student image filename: ${imageFilename}`);
+
+    // Replace image with the found filename
     const imagePathInOdt = path.join(studentDir, 'Pictures', imageFilename);
     await fs.mkdir(path.join(studentDir, 'Pictures'), { recursive: true });
     await fs.writeFile(imagePathInOdt, imageBuffer);
     console.log(`✅ Wrote image to ${imagePathInOdt}`);
 
     // Update content.xml to ensure it references the correct image file
-    const contentXmlPath = path.join(studentDir, 'content.xml');
     try {
         let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
         contentXml = contentXml.replace(/Pictures\/[^"]+\.(png|jpg|jpeg)/i, `Pictures/${imageFilename}`);
