@@ -267,9 +267,6 @@ async function GenerateOdtFile() {
         console.log(`✅ Template saved locally to: ${templatePath}`);
 
         // STEP 4: Render ODT & convert to PDF
-        carbone.setOptions({
-            replace: 'null' // If any data field is null/undefined, replace it with an empty string
-        });
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             let transformedData = transformedStudents[i];
