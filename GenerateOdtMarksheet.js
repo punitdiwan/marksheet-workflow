@@ -252,9 +252,9 @@ async function GenerateOdtFile() {
             const student = students[i];
             let transformedData = transformedStudents[i];
             transformedData = cleanData(transformedData);
-            // if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
-            //     transformedData.photo = await fetchImageAsBase64(student.photo);
-            // }
+            if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
+                transformedData.photo = await fetchImageAsBase64(student.photo);
+            }
 
             // ✨ NEW: Combine student's transformed data with the general school details
             const dataForCarbone = {
