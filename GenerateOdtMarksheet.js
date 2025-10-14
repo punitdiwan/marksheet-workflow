@@ -390,8 +390,16 @@ async function GenerateOdtFile() {
         if (!schoolDetailsResponse.ok) {
             throw new Error(`Failed to fetch school details: ${await schoolDetailsResponse.text()}`);
         }
-        const schoolDetails = cleanData(await schoolDetailsResponse.json());
+        let schoolDetails = cleanData(await schoolDetailsResponse.json());
         console.log("✅ School details fetched successfully.");
+
+        // Transform logo field to full URL
+        if (schoolDetails.logo && typeof schoolDetails.logo === 'string') {
+            schoolDetails.logo = `https://schoolerp-bucket.blr1.cdn.digitaloceanspaces.com/supa-img/${schoolId}/${schoolDetails.logo}`;
+            console.log(`✅ Transformed school logo to: ${schoolDetails.logo}`);
+        } else {
+            console.warn(`⚠️ School logo not found or invalid in schoolDetails. Using original value: ${schoolDetails.logo || 'undefined'}`);
+        }
 
         // STEP 1: Fetch student marks
         const marksPayload = {
@@ -566,5 +574,5 @@ async function GenerateOdtFile() {
     }
 }
 
-// --- EXECUTION ---
+// --- EXECUTION -------
 GenerateOdtFile();
