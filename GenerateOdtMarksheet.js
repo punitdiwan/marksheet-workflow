@@ -9,14 +9,12 @@ const util = require('util');
 const fetch = require('node-fetch');
 const carbone = require('carbone');
 const FormData = require('form-data');
-
-const { fileTypeFromBuffer } = require('file-type'); // ✨ ADD THIS LINE
-
 require('dotenv').config();
 
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
 
+const sharp = require("sharp");
 // --- UTILITY FUNCTIONS ---
 async function updateJobHistory(jobId, schoolId, payload) {
     try {
@@ -101,25 +99,15 @@ async function fetchImageAsBase64(url) {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Failed to fetch image: ${url}`);
 
-        const buffer = Buffer.from(await res.arrayBuffer());
+        const arrayBuffer = await res.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
 
-        // Now this works because it was required at the top of the file
-        const type = await fileTypeFromBuffer(buffer);
+        // Convert to PNG using sharp
+        const pngBuffer = await sharp(buffer).png().toBuffer();
 
-        let mimeType = 'image/jpeg'; // Default to jpeg as a safe fallback
-        if (type) {
-            mimeType = type.mime;
-        } else {
-            console.warn(`⚠️ Could not detect mime type for ${url}, falling back to extension.`);
-            mimeType = url.endsWith(".png") ? "image/png" : "image/jpeg";
-        }
-
-        console.log(`📸 Image fetched: ${url}, Detected MIME type: ${mimeType}`);
-        return `data:${mimeType};base64,${buffer.toString("base64")}`;
-
+        return `data:image/png;base64,${pngBuffer.toString("base64")}`;
     } catch (err) {
-        console.warn("⚠️ Could not fetch photo for student:", url, err.message);
-        console.error("Full error details:", err);
+        console.warn("⚠️ Could not fetch or convert photo:", url, err.message);
         return null;
     }
 }
