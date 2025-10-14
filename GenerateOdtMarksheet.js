@@ -122,23 +122,26 @@ async function findStudentImageFilename(contentXmlPath, picturesDir) {
     try {
         const contentXml = await fs.readFile(contentXmlPath, 'utf-8');
         const parsedXml = await parseXml(contentXml);
-        // Navigate to draw:image elements
-        const drawImages = parsedXml['office:document-content']?.['office:body']?.[0]?.['office:text']?.[0]?.['draw:frame']?.flatMap(frame => frame['draw:image'] || []) || [];
-        for (const image of drawImages) {
-            const href = image['$']?.['xlink:href'];
-            if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
-                const filename = href.replace('Pictures/', '');
-                // Verify the file exists in Pictures directory
-                const filePath = path.join(picturesDir, filename);
-                try {
-                    await fs.access(filePath);
-                    return filename;
-                } catch (err) {
-                    console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory.`);
+        // Navigate to draw:image elements within draw:frame
+        const drawFrames = parsedXml['office:document-content']?.['office:body']?.[0]?.['office:text']?.[0]?.['draw:frame'] || [];
+        for (const frame of drawFrames) {
+            const image = frame['draw:image']?.[0];
+            if (image && image['$']?.['draw:name'] === 'studentImage') {
+                const href = image['$']?.['xlink:href'];
+                if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
+                    const filename = href.replace('Pictures/', '');
+                    // Verify the file exists in Pictures directory
+                    const filePath = path.join(picturesDir, filename);
+                    try {
+                        await fs.access(filePath);
+                        return filename;
+                    } catch (err) {
+                        console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory.`);
+                    }
                 }
             }
         }
-        console.warn(`⚠️ No valid student image found in content.xml.`);
+        console.warn(`⚠️ No student image with draw:name="studentImage" found in content.xml.`);
         return null;
     } catch (err) {
         console.error(`❌ Failed to parse content.xml or read Pictures directory:`, err);
@@ -214,7 +217,7 @@ async function replaceImageInOdt(templatePath, student, tempDir) {
     // Update content.xml to ensure it references the correct image file
     try {
         let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-        contentXml = contentXml.replace(/Pictures\/[^"]+\.(png|jpg|jpeg)/i, `Pictures/${imageFilename}`);
+        contentXml = contentXml.replace(new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="studentImage")`, 'i'), `Pictures/${imageFilename}`);
         await fs.writeFile(contentXmlPath, contentXml);
         console.log(`✅ Updated content.xml for ${student.full_name}`);
     } catch (err) {
