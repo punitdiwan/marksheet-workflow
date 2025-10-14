@@ -118,7 +118,7 @@ async function waitForFile(filePath, retries = 5, delay = 100) {
     return false;
 }
 
-async function findStudentImageFilename(contentXmlPath, picturesDir) {
+async function findImageFilename(contentXmlPath, picturesDir, frameName) {
     try {
         const contentXml = await fs.readFile(contentXmlPath, 'utf-8');
         const parsedXml = await parseXml(contentXml, {
@@ -130,7 +130,7 @@ async function findStudentImageFilename(contentXmlPath, picturesDir) {
             preserveChildrenOrder: true
         });
 
-        console.log(`DEBUG: Starting search for draw:image with draw:name="studentImage"`);
+        console.log(`DEBUG: Starting search for draw:image with draw:name="${frameName}"`);
 
         // Recursive function to find draw:frame elements
         function findFrames(node) {
@@ -175,12 +175,12 @@ async function findStudentImageFilename(contentXmlPath, picturesDir) {
             console.log(`DEBUG: Frame ${index + 1} - draw:name="${name}", xlink:href="${href}"`);
         });
 
-        // Look for studentImage
+        // Look for the specified frameName
         for (const frame of drawFrames) {
-            if (frame['draw:name'] === 'studentImage' && frame['draw:image']) {
+            if (frame['draw:name'] === frameName && frame['draw:image']) {
                 const image = frame['draw:image'];
                 const href = image['xlink:href'];
-                console.log(`DEBUG: Found draw:image with draw:name="studentImage", href=${href}`);
+                console.log(`DEBUG: Found draw:image with draw:name="${frameName}", href=${href}`);
                 if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
                     const filename = href.replace('Pictures/', '');
                     const filePath = path.join(picturesDir, filename);
@@ -195,26 +195,15 @@ async function findStudentImageFilename(contentXmlPath, picturesDir) {
             }
         }
 
-        console.warn(`⚠️ No student image with draw:name="studentImage" found in content.xml.`);
+        console.warn(`⚠️ No image with draw:name="${frameName}" found in content.xml.`);
         return null;
     } catch (err) {
-        console.error(`❌ Failed to parse content.xml or read Pictures directory:`, err);
+        console.error(`❌ Failed to parse content.xml or read Pictures directory for ${frameName}:`, err);
         return null;
     }
 }
 
-async function replaceImageInOdt(templatePath, student, tempDir) {
-    if (!student.photo || student.photo === "-" || !student.photo.startsWith("http")) {
-        console.log(`⚠️ No valid photo URL for ${student.full_name}. Using original template.`);
-        return templatePath;
-    }
-
-    const imageBuffer = await fetchImage(student.photo);
-    if (!imageBuffer) {
-        console.log(`⚠️ Failed to fetch image for ${student.full_name}. Using original template.`);
-        return templatePath;
-    }
-
+async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) {
     const studentDir = path.join(tempDir, `student_${student.student_id}`);
     await fs.mkdir(studentDir, { recursive: true });
 
@@ -260,31 +249,77 @@ async function replaceImageInOdt(templatePath, student, tempDir) {
         return templatePath;
     }
 
-    // Find the student image filename from content.xml
     const contentXmlPath = path.join(studentDir, 'content.xml');
     const picturesDir = path.join(studentDir, 'Pictures');
-    const imageFilename = await findStudentImageFilename(contentXmlPath, picturesDir);
-    if (!imageFilename) {
-        console.warn(`⚠️ No student image found for ${student.full_name}. Using original template.`);
-        return templatePath;
+
+    // Handle student image
+    let studentImageFilename = null;
+    if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
+        const studentImageBuffer = await fetchImage(student.photo);
+        if (studentImageBuffer) {
+            studentImageFilename = await findImageFilename(contentXmlPath, picturesDir, 'studentImage');
+            if (studentImageFilename) {
+                const studentImagePath = path.join(picturesDir, studentImageFilename);
+                await fs.mkdir(picturesDir, { recursive: true });
+                await fs.writeFile(studentImagePath, studentImageBuffer);
+                console.log(`✅ Wrote student image to ${studentImagePath}`);
+
+                // Update content.xml for student image
+                try {
+                    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+                    contentXml = contentXml.replace(
+                        new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="studentImage")`, 'i'),
+                        `Pictures/${studentImageFilename}`
+                    );
+                    await fs.writeFile(contentXmlPath, contentXml);
+                    console.log(`✅ Updated content.xml for student image for ${student.full_name}`);
+                } catch (err) {
+                    console.error(`❌ Failed to update content.xml for student image for ${student.full_name}:`, err);
+                    return templatePath;
+                }
+            } else {
+                console.warn(`⚠️ No student image found for ${student.full_name}. Skipping student image replacement.`);
+            }
+        } else {
+            console.warn(`⚠️ Failed to fetch student image for ${student.full_name}. Skipping student image replacement.`);
+        }
+    } else {
+        console.log(`⚠️ No valid student photo URL for ${student.full_name}. Skipping student image replacement.`);
     }
-    console.log(`✅ Found student image filename: ${imageFilename}`);
 
-    // Replace image with the found filename
-    const imagePathInOdt = path.join(studentDir, 'Pictures', imageFilename);
-    await fs.mkdir(path.join(studentDir, 'Pictures'), { recursive: true });
-    await fs.writeFile(imagePathInOdt, imageBuffer);
-    console.log(`✅ Wrote image to ${imagePathInOdt}`);
+    // Handle school logo
+    let schoolLogoFilename = null;
+    if (schoolDetails.logo && schoolDetails.logo.startsWith("http")) {
+        const schoolLogoBuffer = await fetchImage(schoolDetails.logo);
+        if (schoolLogoBuffer) {
+            schoolLogoFilename = await findImageFilename(contentXmlPath, picturesDir, 'schoolLogo');
+            if (schoolLogoFilename) {
+                const schoolLogoPath = path.join(picturesDir, schoolLogoFilename);
+                await fs.mkdir(picturesDir, { recursive: true });
+                await fs.writeFile(schoolLogoPath, schoolLogoBuffer);
+                console.log(`✅ Wrote school logo to ${schoolLogoPath}`);
 
-    // Update content.xml to ensure it references the correct image file
-    try {
-        let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-        contentXml = contentXml.replace(new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="studentImage")`, 'i'), `Pictures/${imageFilename}`);
-        await fs.writeFile(contentXmlPath, contentXml);
-        console.log(`✅ Updated content.xml for ${student.full_name}`);
-    } catch (err) {
-        console.error(`❌ Failed to update content.xml for ${student.full_name}:`, err);
-        return templatePath;
+                // Update content.xml for school logo
+                try {
+                    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+                    contentXml = contentXml.replace(
+                        new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="schoolLogo")`, 'i'),
+                        `Pictures/${schoolLogoFilename}`
+                    );
+                    await fs.writeFile(contentXmlPath, contentXml);
+                    console.log(`✅ Updated content.xml for school logo for ${student.full_name}`);
+                } catch (err) {
+                    console.error(`❌ Failed to update content.xml for school logo for ${student.full_name}:`, err);
+                    return templatePath;
+                }
+            } else {
+                console.warn(`⚠️ No school logo found in content.xml for ${student.full_name}. Skipping school logo replacement.`);
+            }
+        } else {
+            console.warn(`⚠️ Failed to fetch school logo from ${schoolDetails.logo}. Skipping school logo replacement.`);
+        }
+    } else {
+        console.warn(`⚠️ No valid school logo URL in schoolDetails: ${schoolDetails.logo || 'undefined'}. Skipping school logo replacement.`);
     }
 
     // Re-zip to create new ODT
@@ -482,8 +517,8 @@ async function GenerateOdtFile() {
 
             console.log(`📝 Processing student: ${student.full_name}`);
 
-            // Replace image in ODT
-            const modifiedOdtPath = await replaceImageInOdt(templatePath, student, tempDir);
+            // Replace images in ODT (both student and school logo)
+            const modifiedOdtPath = await replaceImageInOdt(templatePath, student, schoolDetails, tempDir);
 
             const dataForCarbone = {
                 ...transformedData,
@@ -574,5 +609,5 @@ async function GenerateOdtFile() {
     }
 }
 
-// --- EXECUTION -------
+// --- EXECUTION ---
 GenerateOdtFile();
