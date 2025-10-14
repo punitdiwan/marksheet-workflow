@@ -5,8 +5,6 @@ const util = require('util');
 const fetch = require('node-fetch');
 const carbone = require('carbone');
 const FormData = require('form-data');
-const yauzl = require('yauzl');
-const yazl = require('yazl');
 const sharp = require('sharp');
 const xml2js = require('xml2js');
 require('dotenv').config();
@@ -204,45 +202,20 @@ async function findImageFilename(contentXmlPath, picturesDir, frameName) {
 }
 
 async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) {
-    const studentDir = path.join(tempDir, `student_${student.student_id}`);
-    await fs.mkdir(studentDir, { recursive: true });
+    const tempOdtDir = path.join(tempDir, `odt_temp_${student.student_id}`);
+    const newOdtPath = path.join(tempDir, `${student.full_name?.replace(/\s+/g, '_') || student.student_id}_new.odt`);
 
-    // Unzip ODT
-    const unzipPromise = new Promise((resolve, reject) => {
-        yauzl.open(templatePath, { lazyEntries: true }, (err, zipfile) => {
-            if (err) return reject(err);
-            zipfile.readEntry();
-            zipfile.on('entry', async (entry) => {
-                const entryPath = path.join(studentDir, entry.fileName);
-                if (/\/$/.test(entry.fileName)) {
-                    await fs.mkdir(entryPath, { recursive: true });
-                    zipfile.readEntry();
-                } else {
-                    zipfile.openReadStream(entry, async (err, readStream) => {
-                        if (err) return reject(err);
-                        await fs.mkdir(path.dirname(entryPath), { recursive: true });
-                        const writeStream = require('fs').createWriteStream(entryPath);
-                        readStream.pipe(writeStream);
-                        readStream.on('end', () => zipfile.readEntry());
-                        readStream.on('error', reject);
-                    });
-                }
-            });
-            zipfile.on('end', () => resolve());
-            zipfile.on('error', reject);
-        });
-    });
-
+    // Create temp folder and extract ODT contents
     try {
-        await unzipPromise;
-        console.log(`✅ Unzipped template for ${student.full_name} to ${studentDir}`);
+        await execPromise(`mkdir -p "${tempOdtDir}" && cd "${tempOdtDir}" && unzip "${templatePath}"`);
+        console.log(`✅ Extracted template for ${student.full_name} to ${tempOdtDir}`);
     } catch (err) {
-        console.error(`❌ Failed to unzip template for ${student.full_name}:`, err);
+        console.error(`❌ Failed to extract template for ${student.full_name}:`, err.stderr || err);
         return templatePath;
     }
 
-    const contentXmlPath = path.join(studentDir, 'content.xml');
-    const picturesDir = path.join(studentDir, 'Pictures');
+    const contentXmlPath = path.join(tempOdtDir, 'content.xml');
+    const picturesDir = path.join(tempOdtDir, 'Pictures');
     let pictureFiles = [];
 
     // Check Pictures directory contents
@@ -256,7 +229,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
     // Handle case based on number of files in Pictures directory
     if (pictureFiles.length === 1) {
-        // Only one file: assume it's the school logo
+        // Only one file: assume it's the school logo (logo.png)
         if (!schoolDetails.logo || !schoolDetails.logo.startsWith("http")) {
             console.warn(`⚠️ No valid school logo URL in schoolDetails: ${schoolDetails.logo || 'undefined'}. Using original template.`);
             return templatePath;
@@ -268,12 +241,15 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             return templatePath;
         }
 
-        const schoolLogoPath = path.join(picturesDir, pictureFiles[0]);
-        await fs.mkdir(picturesDir, { recursive: true });
+        const schoolLogoPath = path.join(picturesDir, 'logo.png');
         await fs.writeFile(schoolLogoPath, schoolLogoBuffer);
         console.log(`✅ Replaced school logo at ${schoolLogoPath} (single file case)`);
+
+        // Format content.xml (optional)
+        await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
+        console.log(`✅ Formatted content.xml for ${student.full_name}`);
     } else if (pictureFiles.length === 2) {
-        // Two files: handle both student image and school logo
+        // Two files: handle both student image and school logo (logo.png)
         // Handle student image
         let studentImageFilename = null;
         if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
@@ -282,7 +258,6 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
                 studentImageFilename = await findImageFilename(contentXmlPath, picturesDir, 'studentImage');
                 if (studentImageFilename) {
                     const studentImagePath = path.join(picturesDir, studentImageFilename);
-                    await fs.mkdir(picturesDir, { recursive: true });
                     await fs.writeFile(studentImagePath, studentImageBuffer);
                     console.log(`✅ Wrote student image to ${studentImagePath}`);
 
@@ -310,32 +285,25 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         }
 
         // Handle school logo
-        let schoolLogoFilename = null;
         if (schoolDetails.logo && schoolDetails.logo.startsWith("http")) {
             const schoolLogoBuffer = await fetchImage(schoolDetails.logo);
             if (schoolLogoBuffer) {
-                schoolLogoFilename = await findImageFilename(contentXmlPath, picturesDir, 'schoolLogo');
-                if (schoolLogoFilename) {
-                    const schoolLogoPath = path.join(picturesDir, schoolLogoFilename);
-                    await fs.mkdir(picturesDir, { recursive: true });
-                    await fs.writeFile(schoolLogoPath, schoolLogoBuffer);
-                    console.log(`✅ Wrote school logo to ${schoolLogoPath}`);
+                const schoolLogoPath = path.join(picturesDir, 'logo.png');
+                await fs.writeFile(schoolLogoPath, schoolLogoBuffer);
+                console.log(`✅ Wrote school logo to ${schoolLogoPath}`);
 
-                    // Update content.xml for school logo
-                    try {
-                        let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-                        contentXml = contentXml.replace(
-                            new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="schoolLogo")`, 'i'),
-                            `Pictures/${schoolLogoFilename}`
-                        );
-                        await fs.writeFile(contentXmlPath, contentXml);
-                        console.log(`✅ Updated content.xml for school logo for ${student.full_name}`);
-                    } catch (err) {
-                        console.error(`❌ Failed to update content.xml for school logo for ${student.full_name}:`, err);
-                        return templatePath;
-                    }
-                } else {
-                    console.warn(`⚠️ No school logo found in content.xml for ${student.full_name}. Skipping school logo replacement.`);
+                // Update content.xml for school logo
+                try {
+                    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+                    contentXml = contentXml.replace(
+                        new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="schoolLogo")`, 'i'),
+                        'Pictures/logo.png'
+                    );
+                    await fs.writeFile(contentXmlPath, contentXml);
+                    console.log(`✅ Updated content.xml for school logo for ${student.full_name}`);
+                } catch (err) {
+                    console.error(`❌ Failed to update content.xml for school logo for ${student.full_name}:`, err);
+                    return templatePath;
                 }
             } else {
                 console.warn(`⚠️ Failed to fetch school logo from ${schoolDetails.logo}. Skipping school logo replacement.`);
@@ -343,38 +311,20 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         } else {
             console.warn(`⚠️ No valid school logo URL in schoolDetails: ${schoolDetails.logo || 'undefined'}. Skipping school logo replacement.`);
         }
+
+        // Format content.xml (optional)
+        await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
+        console.log(`✅ Formatted content.xml for ${student.full_name}`);
     } else {
         console.warn(`⚠️ Unexpected number of files in Pictures directory (${pictureFiles.length}). Using original template.`);
         return templatePath;
     }
 
-    // Re-zip to create new ODT
-    const newOdtPath = path.join(tempDir, `${student.full_name?.replace(/\s+/g, '_') || student.student_id}.odt`);
-    const zip = new yazl.ZipFile();
-    const walkDir = async (dir, zipPath = '') => {
-        const files = await fs.readdir(dir);
-        for (const file of files) {
-            const fullPath = path.join(dir, file);
-            const stats = await fs.stat(fullPath);
-            const zipEntry = path.join(zipPath, file);
-            if (stats.isDirectory()) {
-                await walkDir(fullPath, zipEntry);
-            } else {
-                zip.addFile(fullPath, zipEntry);
-            }
-        }
-    };
-
+    // Repack into a new ODT (mimetype first, uncompressed)
     try {
-        await walkDir(studentDir);
-        const writeStream = require('fs').createWriteStream(newOdtPath);
-        zip.outputStream.pipe(writeStream);
-        await new Promise((resolve, reject) => {
-            writeStream.on('finish', resolve);
-            writeStream.on('error', reject);
-            zip.end();
-        });
-        console.log(`✅ Zipped new ODT for ${student.full_name} at ${newOdtPath}`);
+        await execPromise(`cd "${tempOdtDir}" && zip -0 "${newOdtPath}" mimetype`);
+        await execPromise(`cd "${tempOdtDir}" && zip -r "${newOdtPath}" * -x mimetype`);
+        console.log(`✅ Repacked new ODT for ${student.full_name} at ${newOdtPath}`);
 
         // Wait for the file to be fully written
         const fileExists = await waitForFile(newOdtPath);
@@ -383,8 +333,13 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         }
         return newOdtPath;
     } catch (err) {
-        console.error(`❌ Failed to re-zip ODT for ${student.full_name}:`, err);
+        console.error(`❌ Failed to repack ODT for ${student.full_name}:`, err.stderr || err);
         return templatePath;
+    } finally {
+        // Clean up temp directory
+        await fs.rm(tempOdtDir, { recursive: true, force: true }).catch((err) => {
+            console.warn(`⚠️ Failed to clean up temp directory ${tempOdtDir}:`, err.message);
+        });
     }
 }
 
