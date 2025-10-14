@@ -92,8 +92,8 @@ async function fetchImage(url) {
         if (!res.ok) throw new Error(`Failed to fetch image: ${url}`);
         const arrayBuffer = await res.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-        // Convert to PNG using sharp
-        return await sharp(buffer).png().toBuffer();
+        // Convert to JPEG to match template filename
+        return await sharp(buffer).jpeg().toBuffer();
     } catch (err) {
         console.warn("⚠️ Could not fetch or convert photo:", url, err.message);
         return null;
@@ -136,21 +136,33 @@ async function replaceImageInOdt(templatePath, student, tempDir) {
                 }
             });
             zipfile.on('end', () => resolve());
+            zipfile.on('error', (err) => reject(err));
         });
     });
 
-    await unzipPromise;
+    try {
+        await unzipPromise;
+    } catch (err) {
+        console.error(`❌ Failed to unzip template for ${student.full_name}:`, err);
+        return templatePath;
+    }
 
     // Replace image with the specific filename
     const imageFilename = '100000000000010A0000010B760A19F1669E6D06.jpg';
     const imagePathInOdt = path.join(studentDir, 'Pictures', imageFilename);
+    await fs.mkdir(path.join(studentDir, 'Pictures'), { recursive: true });
     await fs.writeFile(imagePathInOdt, imageBuffer);
 
     // Update content.xml to ensure it references the correct image file
     const contentXmlPath = path.join(studentDir, 'content.xml');
-    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-    contentXml = contentXml.replace(/Pictures\/[^"]+\.(png|jpg|jpeg)/i, `Pictures/${imageFilename}`);
-    await fs.writeFile(contentXmlPath, contentXml);
+    try {
+        let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+        contentXml = contentXml.replace(/Pictures\/[^"]+\.(png|jpg|jpeg)/i, `Pictures/${imageFilename}`);
+        await fs.writeFile(contentXmlPath, contentXml);
+    } catch (err) {
+        console.error(`❌ Failed to update content.xml for ${student.full_name}:`, err);
+        return templatePath;
+    }
 
     // Re-zip to create new ODT
     const newOdtPath = path.join(tempDir, `${student.full_name?.replace(/\s+/g, '_') || student.student_id}.odt`);
@@ -168,11 +180,24 @@ async function replaceImageInOdt(templatePath, student, tempDir) {
             }
         }
     };
-    await walkDir(studentDir);
-    zip.outputStream.pipe(require('fs').createWriteStream(newOdtPath));
-    await new Promise((resolve) => zip.end(resolve));
 
-    return newOdtPath;
+    try {
+        await walkDir(studentDir);
+        zip.outputStream.pipe(require('fs').createWriteStream(newOdtPath));
+        await new Promise((resolve, reject) => {
+            zip.end(() => {
+                console.log(`✅ Created new ODT for ${student.full_name} at ${newOdtPath}`);
+                resolve();
+            });
+            zip.outputStream.on('error', reject);
+        });
+        // Verify the ODT file exists
+        await fs.access(newOdtPath);
+        return newOdtPath;
+    } catch (err) {
+        console.error(`❌ Failed to re-zip ODT for ${student.full_name}:`, err);
+        return templatePath;
+    }
 }
 
 function cleanData(data) {
@@ -201,6 +226,7 @@ function cleanData(data) {
 // --- MAIN FUNCTION ---
 async function GenerateOdtFile() {
     let outputDir = '';
+    let tempDir = ''; // Define tempDir at the correct scope
     const jobId = process.env.JOB_ID;
     const schoolId = process.env.SCHOOL_ID;
 
@@ -222,7 +248,7 @@ async function GenerateOdtFile() {
 
         outputDir = path.join(process.cwd(), 'output');
         await fs.mkdir(outputDir, { recursive: true });
-        const tempDir = path.join(outputDir, 'temp');
+        tempDir = path.join(outputDir, 'temp');
         await fs.mkdir(tempDir, { recursive: true });
         const pdfPaths = [];
 
@@ -404,10 +430,15 @@ async function GenerateOdtFile() {
         if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
+        throw error; // Re-throw to ensure the process fails appropriately
         // process.exit(1);
     } finally {
         // Clean up temp directory
-        await fs.rm(tempDir, { recursive: true, force: true }).catch(() => { });
+        if (tempDir) {
+            await fs.rm(tempDir, { recursive: true, force: true }).catch((err) => {
+                console.warn(`⚠️ Failed to clean up temp directory: ${err.message}`);
+            });
+        }
     }
 }
 
