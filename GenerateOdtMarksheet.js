@@ -1,4 +1,4 @@
-const fs = require('fs').promises; // Fixed import
+const fs = require('fs').promises;
 const path = require('path');
 const { exec } = require('child_process');
 const util = require('util');
@@ -121,32 +121,80 @@ async function waitForFile(filePath, retries = 5, delay = 100) {
 async function findStudentImageFilename(contentXmlPath, picturesDir) {
     try {
         const contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-        const parsedXml = await parseXml(contentXml);
-        // Navigate to text:p elements under office:text
-        const textElements = parsedXml['office:document-content']?.['office:body']?.[0]?.['office:text']?.[0]?.['text:p'] || [];
-        console.log(`DEBUG: Found ${textElements.length} text:p elements in content.xml`);
+        const parsedXml = await parseXml(contentXml, {
+            explicitArray: false,
+            ignoreAttrs: false,
+            mergeAttrs: true,
+            normalizeTags: false,
+            explicitChildren: true,
+            preserveChildrenOrder: true
+        });
 
-        for (const textP of textElements) {
-            const drawFrames = textP['draw:frame'] || [];
-            for (const frame of drawFrames) {
-                const image = frame['draw:image']?.[0];
-                if (image && image['$']?.['draw:name'] === 'studentImage') {
-                    const href = image['$']?.['xlink:href'];
-                    console.log(`DEBUG: Found draw:image with draw:name="studentImage", href=${href}`);
-                    if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
-                        const filename = href.replace('Pictures/', '');
-                        const filePath = path.join(picturesDir, filename);
-                        try {
-                            await fs.access(filePath);
-                            console.log(`DEBUG: Confirmed image file exists: ${filePath}`);
-                            return filename;
-                        } catch (err) {
-                            console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory:`, err.message);
-                        }
+        console.log(`DEBUG: Starting search for draw:image with draw:name="studentImage"`);
+
+        // Recursive function to find draw:frame elements
+        function findFrames(node) {
+            let frames = [];
+            if (typeof node !== 'object' || node === null) return frames;
+
+            // Check if current node is a draw:frame
+            if (node['draw:frame']) {
+                const frame = node['draw:frame'];
+                if (Array.isArray(frame)) {
+                    frames.push(...frame);
+                } else {
+                    frames.push(frame);
+                }
+            }
+
+            // Recursively search through all child nodes
+            for (const key in node) {
+                if (Object.prototype.hasOwnProperty.call(node, key)) {
+                    if (Array.isArray(node[key])) {
+                        node[key].forEach(child => {
+                            frames.push(...findFrames(child));
+                        });
+                    } else if (typeof node[key] === 'object') {
+                        frames.push(...findFrames(node[key]));
+                    }
+                }
+            }
+            return frames;
+        }
+
+        // Find all draw:frame elements
+        const textContent = parsedXml['office:document-content']?.['office:body']?.['office:text'] || {};
+        const drawFrames = findFrames(textContent);
+        console.log(`DEBUG: Found ${drawFrames.length} draw:frame elements`);
+
+        // Log all draw:frame elements for debugging
+        drawFrames.forEach((frame, index) => {
+            const name = frame['draw:name'] || 'undefined';
+            const image = frame['draw:image'];
+            const href = image?.['xlink:href'] || 'undefined';
+            console.log(`DEBUG: Frame ${index + 1} - draw:name="${name}", xlink:href="${href}"`);
+        });
+
+        // Look for studentImage
+        for (const frame of drawFrames) {
+            if (frame['draw:name'] === 'studentImage' && frame['draw:image']) {
+                const image = frame['draw:image'];
+                const href = image['xlink:href'];
+                console.log(`DEBUG: Found draw:image with draw:name="studentImage", href=${href}`);
+                if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
+                    const filename = href.replace('Pictures/', '');
+                    const filePath = path.join(picturesDir, filename);
+                    try {
+                        await fs.access(filePath);
+                        console.log(`DEBUG: Confirmed image file exists: ${filePath}`);
+                        return filename;
+                    } catch (err) {
+                        console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory:`, err.message);
                     }
                 }
             }
         }
+
         console.warn(`⚠️ No student image with draw:name="studentImage" found in content.xml.`);
         return null;
     } catch (err) {
