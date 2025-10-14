@@ -1,4 +1,4 @@
-const fs = require('fs').promisify;
+const fs = require('fs').promises; // Fixed import
 const path = require('path');
 const { exec } = require('child_process');
 const util = require('util');
@@ -93,7 +93,7 @@ async function fetchImage(url) {
         if (!res.ok) throw new Error(`Failed to fetch image: ${url}`);
         const arrayBuffer = await res.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
-        // Convert to JPEG to match common template image formats
+        // Convert to JPEG to match template image format
         return await sharp(buffer).jpeg().toBuffer();
     } catch (err) {
         console.warn("⚠️ Could not fetch or convert photo:", url, err.message);
