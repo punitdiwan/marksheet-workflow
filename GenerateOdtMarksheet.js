@@ -53,7 +53,6 @@ async function convertOdtToPdf(odtPath, outputDir) {
         }
 
         return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
-
     } catch (error) {
         console.error(`❌ LibreOffice command failed for ${path.basename(odtPath)}.`);
         console.error('--- STDOUT ---');
@@ -100,6 +99,23 @@ async function fetchImage(url) {
     }
 }
 
+async function waitForFile(filePath, retries = 5, delay = 100) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await fs.access(filePath);
+            return true;
+        } catch (err) {
+            if (err.code === 'ENOENT' && i < retries - 1) {
+                console.log(`⌛ Waiting for ${filePath} to be available (${i + 1}/${retries})...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                throw err;
+            }
+        }
+    }
+    return false;
+}
+
 async function replaceImageInOdt(templatePath, student, tempDir) {
     if (!student.photo || student.photo === "-" || !student.photo.startsWith("http")) {
         console.log(`⚠️ No valid photo URL for ${student.full_name}. Using original template.`);
@@ -132,16 +148,18 @@ async function replaceImageInOdt(templatePath, student, tempDir) {
                         const writeStream = require('fs').createWriteStream(entryPath);
                         readStream.pipe(writeStream);
                         readStream.on('end', () => zipfile.readEntry());
+                        readStream.on('error', reject);
                     });
                 }
             });
             zipfile.on('end', () => resolve());
-            zipfile.on('error', (err) => reject(err));
+            zipfile.on('error', reject);
         });
     });
 
     try {
         await unzipPromise;
+        console.log(`✅ Unzipped template for ${student.full_name} to ${studentDir}`);
     } catch (err) {
         console.error(`❌ Failed to unzip template for ${student.full_name}:`, err);
         return templatePath;
@@ -152,6 +170,7 @@ async function replaceImageInOdt(templatePath, student, tempDir) {
     const imagePathInOdt = path.join(studentDir, 'Pictures', imageFilename);
     await fs.mkdir(path.join(studentDir, 'Pictures'), { recursive: true });
     await fs.writeFile(imagePathInOdt, imageBuffer);
+    console.log(`✅ Wrote image to ${imagePathInOdt}`);
 
     // Update content.xml to ensure it references the correct image file
     const contentXmlPath = path.join(studentDir, 'content.xml');
@@ -159,6 +178,7 @@ async function replaceImageInOdt(templatePath, student, tempDir) {
         let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
         contentXml = contentXml.replace(/Pictures\/[^"]+\.(png|jpg|jpeg)/i, `Pictures/${imageFilename}`);
         await fs.writeFile(contentXmlPath, contentXml);
+        console.log(`✅ Updated content.xml for ${student.full_name}`);
     } catch (err) {
         console.error(`❌ Failed to update content.xml for ${student.full_name}:`, err);
         return templatePath;
@@ -183,16 +203,20 @@ async function replaceImageInOdt(templatePath, student, tempDir) {
 
     try {
         await walkDir(studentDir);
-        zip.outputStream.pipe(require('fs').createWriteStream(newOdtPath));
+        const writeStream = require('fs').createWriteStream(newOdtPath);
+        zip.outputStream.pipe(writeStream);
         await new Promise((resolve, reject) => {
-            zip.end(() => {
-                console.log(`✅ Created new ODT for ${student.full_name} at ${newOdtPath}`);
-                resolve();
-            });
-            zip.outputStream.on('error', reject);
+            writeStream.on('finish', resolve);
+            writeStream.on('error', reject);
+            zip.end();
         });
-        // Verify the ODT file exists
-        await fs.access(newOdtPath);
+        console.log(`✅ Zipped new ODT for ${student.full_name} at ${newOdtPath}`);
+
+        // Wait for the file to be fully written
+        const fileExists = await waitForFile(newOdtPath);
+        if (!fileExists) {
+            throw new Error(`File ${newOdtPath} was not created or accessible after zipping`);
+        }
         return newOdtPath;
     } catch (err) {
         console.error(`❌ Failed to re-zip ODT for ${student.full_name}:`, err);
@@ -226,7 +250,7 @@ function cleanData(data) {
 // --- MAIN FUNCTION ---
 async function GenerateOdtFile() {
     let outputDir = '';
-    let tempDir = ''; // Define tempDir at the correct scope
+    let tempDir = '';
     const jobId = process.env.JOB_ID;
     const schoolId = process.env.SCHOOL_ID;
 
@@ -424,16 +448,13 @@ async function GenerateOdtFile() {
         }
 
         console.log("🎉 Marksheets generated and uploaded successfully.");
-
     } catch (error) {
         console.error('❌ FATAL ERROR during marksheet generation:', error.message || error);
         if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
-        throw error; // Re-throw to ensure the process fails appropriately
-        // process.exit(1);
+        throw error;
     } finally {
-        // Clean up temp directory
         if (tempDir) {
             await fs.rm(tempDir, { recursive: true, force: true }).catch((err) => {
                 console.warn(`⚠️ Failed to clean up temp directory: ${err.message}`);
