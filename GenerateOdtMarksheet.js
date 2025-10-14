@@ -1,4 +1,4 @@
-const fs = require('fs').promises;
+const fs = require('fs').promisify;
 const path = require('path');
 const { exec } = require('child_process');
 const util = require('util');
@@ -122,21 +122,27 @@ async function findStudentImageFilename(contentXmlPath, picturesDir) {
     try {
         const contentXml = await fs.readFile(contentXmlPath, 'utf-8');
         const parsedXml = await parseXml(contentXml);
-        // Navigate to draw:image elements within draw:frame
-        const drawFrames = parsedXml['office:document-content']?.['office:body']?.[0]?.['office:text']?.[0]?.['draw:frame'] || [];
-        for (const frame of drawFrames) {
-            const image = frame['draw:image']?.[0];
-            if (image && image['$']?.['draw:name'] === 'studentImage') {
-                const href = image['$']?.['xlink:href'];
-                if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
-                    const filename = href.replace('Pictures/', '');
-                    // Verify the file exists in Pictures directory
-                    const filePath = path.join(picturesDir, filename);
-                    try {
-                        await fs.access(filePath);
-                        return filename;
-                    } catch (err) {
-                        console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory.`);
+        // Navigate to text:p elements under office:text
+        const textElements = parsedXml['office:document-content']?.['office:body']?.[0]?.['office:text']?.[0]?.['text:p'] || [];
+        console.log(`DEBUG: Found ${textElements.length} text:p elements in content.xml`);
+
+        for (const textP of textElements) {
+            const drawFrames = textP['draw:frame'] || [];
+            for (const frame of drawFrames) {
+                const image = frame['draw:image']?.[0];
+                if (image && image['$']?.['draw:name'] === 'studentImage') {
+                    const href = image['$']?.['xlink:href'];
+                    console.log(`DEBUG: Found draw:image with draw:name="studentImage", href=${href}`);
+                    if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
+                        const filename = href.replace('Pictures/', '');
+                        const filePath = path.join(picturesDir, filename);
+                        try {
+                            await fs.access(filePath);
+                            console.log(`DEBUG: Confirmed image file exists: ${filePath}`);
+                            return filename;
+                        } catch (err) {
+                            console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory:`, err.message);
+                        }
                     }
                 }
             }
@@ -193,6 +199,14 @@ async function replaceImageInOdt(templatePath, student, tempDir) {
     try {
         await unzipPromise;
         console.log(`✅ Unzipped template for ${student.full_name} to ${studentDir}`);
+        // Log Pictures directory contents
+        const picturesDir = path.join(studentDir, 'Pictures');
+        try {
+            const pictureFiles = await fs.readdir(picturesDir);
+            console.log(`DEBUG: Pictures directory contents: ${pictureFiles.join(', ')}`);
+        } catch (err) {
+            console.warn(`⚠️ Pictures directory not found or empty:`, err.message);
+        }
     } catch (err) {
         console.error(`❌ Failed to unzip template for ${student.full_name}:`, err);
         return templatePath;
