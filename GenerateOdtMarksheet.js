@@ -96,19 +96,32 @@ async function compressPdf(inputPath, outputPath) {
 
 async function fetchImageAsBase64(url) {
     try {
+        console.log(`📸 Fetching image from: ${url}`);
         const res = await fetch(url);
-        if (!res.ok) throw new Error(`Failed to fetch image: ${url}`);
+        if (!res.ok) {
+            throw new Error(`Failed to fetch image: ${res.status} ${res.statusText}`);
+        }
+
+        const contentType = res.headers.get('content-type');
+        if (!contentType || !contentType.startsWith('image/')) {
+            throw new Error(`Invalid content type: ${contentType}. Expected an image.`);
+        }
 
         const arrayBuffer = await res.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        // Convert to PNG using sharp
-        const pngBuffer = await sharp(buffer).png().toBuffer();
+        // Convert to PNG using sharp and ensure consistent output
+        const pngBuffer = await sharp(buffer)
+            .png({ quality: 80 }) // Optimize quality to balance size and clarity
+            .toBuffer();
 
-        return `data:image/png;base64,${pngBuffer.toString("base64")}`;
+        const base64String = `data:image/png;base64,${pngBuffer.toString('base64')}`;
+        console.log(`✅ Successfully converted image to base64 (size: ${(base64String.length / 1024).toFixed(2)} KB)`);
+        return base64String;
     } catch (err) {
-        console.warn("⚠️ Could not fetch or convert photo:", url, err.message);
-        return null;
+        console.warn(`⚠️ Failed to fetch or convert image: ${url}. Error: ${err.message}`);
+        // Return a placeholder image or null to avoid breaking the template
+        return null; // Alternatively, return a default base64 placeholder image
     }
 }
 
@@ -254,6 +267,9 @@ async function GenerateOdtFile() {
         console.log(`✅ Template saved locally to: ${templatePath}`);
 
         // STEP 4: Render ODT & convert to PDF
+        carbone.setOptions({
+            replace: 'null' // If any data field is null/undefined, replace it with an empty string
+        });
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             let transformedData = transformedStudents[i];
