@@ -9,8 +9,10 @@ const util = require('util');
 const fetch = require('node-fetch');
 const carbone = require('carbone');
 const FormData = require('form-data');
+
+const { fileTypeFromBuffer } = require('file-type'); // ✨ ADD THIS LINE
+
 require('dotenv').config();
-const { fileTypeFromBuffer } = require('file-type'); // Add this line
 
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
@@ -101,24 +103,23 @@ async function fetchImageAsBase64(url) {
 
         const buffer = Buffer.from(await res.arrayBuffer());
 
-        // ✨ NEW: Determine the file type from the actual image data
+        // Now this works because it was required at the top of the file
         const type = await fileTypeFromBuffer(buffer);
 
         let mimeType = 'image/jpeg'; // Default to jpeg as a safe fallback
         if (type) {
-            mimeType = type.mime; // Use the detected MIME type (e.g., 'image/jpeg', 'image/png')
+            mimeType = type.mime;
         } else {
             console.warn(`⚠️ Could not detect mime type for ${url}, falling back to extension.`);
-            // Fallback to your old logic if detection fails
             mimeType = url.endsWith(".png") ? "image/png" : "image/jpeg";
         }
 
         console.log(`📸 Image fetched: ${url}, Detected MIME type: ${mimeType}`);
-
         return `data:${mimeType};base64,${buffer.toString("base64")}`;
 
     } catch (err) {
         console.warn("⚠️ Could not fetch photo for student:", url, err.message);
+        console.error("Full error details:", err);
         return null;
     }
 }
