@@ -14,10 +14,7 @@ require('dotenv').config();
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
 
-const sharp = require("sharp");
-
 // --- UTILITY FUNCTIONS ---
-
 async function updateJobHistory(jobId, schoolId, payload) {
     try {
         const jobUpdatePayload = {
@@ -74,7 +71,10 @@ async function mergePdfs(pdfPaths, outputPath) {
     await execPromise(command);
 }
 
+// ✨ NEW Function: Compress PDF using Ghostscript
 async function compressPdf(inputPath, outputPath) {
+    // We use the 'ebook' setting, which provides a great balance
+    // between file size reduction and quality preservation for on-screen viewing.
     const command = `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outputPath}" "${inputPath}"`;
     try {
         console.log(`🗜️  Compressing PDF: ${path.basename(inputPath)}`);
@@ -86,46 +86,27 @@ async function compressPdf(inputPath, outputPath) {
         console.error(error.stdout);
         console.error('--- STDERR ---');
         console.error(error.stderr);
+        // Fallback: If compression fails, we can try to use the original file.
+        // For now, we'll throw an error to make the issue visible.
         throw new Error(`Ghostscript compression failed. See logs above.`);
     }
 }
 
 
-/**
- * ✨ NEW: Downloads an image, converts it to PNG, and saves it locally.
- * This is a more robust method for image insertion with Carbone.
- * @param {string} url - The URL of the image to download.
- * @param {string} studentId - The unique ID of the student for a unique filename.
- * @param {string} outputDir - The directory to save the image in.
- * @returns {Promise<string|null>} The local path to the saved image, or null on failure.
- */
-async function downloadAndPrepareImage(url, studentId, outputDir) {
+async function fetchImageAsBase64(url) {
     try {
         const res = await fetch(url);
-        if (!res.ok) throw new Error(`Failed to fetch image: ${url} (${res.status})`);
-
-        // node-fetch v2 uses .buffer(), v3 uses .arrayBuffer()
-        const buffer = await (res.buffer ? res.buffer() : Buffer.from(await res.arrayBuffer()));
-
-        const imagePath = path.join(outputDir, `photo_${studentId}.png`);
-
-        // Use sharp to process the image: resize for consistency and convert to PNG for reliability
-        await sharp(buffer)
-            .resize(300, 300, { fit: 'inside', withoutEnlargement: true })
-            .png()
-            .toFile(imagePath);
-
-        console.log(`🖼️  Photo for student ${studentId} saved to ${imagePath}`);
-        return imagePath; // Return the local file path
+        if (!res.ok) throw new Error(`Failed to fetch image: ${url}`);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        const mimeType = url.endsWith(".png") ? "image/png" : "image/jpeg";
+        return `data:${mimeType};base64,${buffer.toString("base64")}`;
     } catch (err) {
-        console.warn(`⚠️ Could not download or process photo for student ${studentId}:`, url, err.message);
-        return null; // Return null on failure, Carbone will just skip it.
+        console.warn("⚠️ Could not fetch photo for student:", url, err.message);
+        return null;
     }
 }
 
-
 function cleanData(data) {
-    // ... (This function remains unchanged)
     if (data === null || data === undefined || (typeof data === 'number' && isNaN(data))) {
         return '';
     }
@@ -157,7 +138,6 @@ async function GenerateOdtFile() {
     try {
         console.log("🚀 Starting dynamic marksheet generation with Carbone...");
 
-        // ... (Environment variable fetching remains the same)
         const groupid = process.env.GROUP_ID;
         const batchId = process.env.BATCH_ID;
         const courseId = process.env.COURSE_ID;
@@ -175,7 +155,7 @@ async function GenerateOdtFile() {
         await fs.promises.mkdir(outputDir, { recursive: true });
         const pdfPaths = [];
 
-        // ... (School Details and Student Marks fetching remains the same)
+        // ✨ STEP 0: NEW - Fetch School Details
         console.log("🏫 Fetching school details...");
         const schoolDetailsPayload = { school_id: schoolId };
         const schoolDetailsResponse = await fetch('https://demoschool.edusparsh.com/api/get_School_Detail', {
@@ -186,9 +166,12 @@ async function GenerateOdtFile() {
         if (!schoolDetailsResponse.ok) {
             throw new Error(`Failed to fetch school details: ${await schoolDetailsResponse.text()}`);
         }
+        // Assuming the API returns a single object with school data. Clean it once.
         const schoolDetails = cleanData(await schoolDetailsResponse.json());
         console.log("✅ School details fetched successfully.");
 
+
+        // STEP 1: Fetch student marks
         const marksPayload = {
             _school: schoolId,
             batchId: [batchId],
@@ -199,30 +182,41 @@ async function GenerateOdtFile() {
             console.log(`Filtering for specific students: ${studentIdsInput}`);
             marksPayload.student_ids = studentIdsInput.split(',');
         }
+
         console.log("📥 Fetching student data with payload:", JSON.stringify(marksPayload));
         const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(marksPayload),
         });
+
         if (!studentResponse.ok) throw new Error(`Failed to fetch student data: ${await studentResponse.text()}`);
+
         const studentResponseJson = await studentResponse.json();
         let students = studentResponseJson.students || studentResponseJson.data || [];
+
         console.log("students data from cce marks api", students[0]);
+
         if (studentIdsInput) {
             const requestedStudentIds = new Set(studentIdsInput.split(','));
             console.log(`API returned ${students.length} students. Now filtering for the ${requestedStudentIds.size} requested student(s).`);
             students = students.filter(student => student && student.student_id && requestedStudentIds.has(student.student_id));
         }
-        students = students.filter(s => s && typeof s === 'object' && s.student_id);
+
+        students = students.filter(s => s && typeof s === 'object');
+        students = students.filter(s => s.student_id);
+
         if (students.length === 0) {
             console.warn("⚠️ No valid students found matching the criteria. Exiting gracefully.");
             await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No valid students found matching the criteria." });
             return;
         }
+
         students = students.map(s => ({ ...s, _uid: s.student_id }));
+
         console.log(`✅ Found and will process ${students.length} student(s).`);
 
+        // STEP 2: Call config + transformation API
         console.log("📡 Fetching marksheet config + transformed data from API...");
         const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
             method: "POST",
@@ -240,11 +234,13 @@ async function GenerateOdtFile() {
             throw new Error(`Config API failed: ${bodyText}`);
         }
         const { transformedStudents } = await apiRes.json();
-        if (!transformedStudents) {
+        if (!
+            transformedStudents) {
             throw new Error(`Config API failed: missing transformedStudents in response.`);
         }
         console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
 
+        // STEP 3: Download template
         console.log("📥 Downloading template...");
         const templateBuffer = await downloadFile(templateUrl);
         const templatePath = path.join(outputDir, 'template.odt');
@@ -254,16 +250,13 @@ async function GenerateOdtFile() {
         // STEP 4: Render ODT & convert to PDF
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
-            let transformedData = cleanData(transformedStudents[i]);
-
-            // ✨ CHANGE: Download the photo and get the local path
+            let transformedData = transformedStudents[i];
+            transformedData = cleanData(transformedData);
             if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
-                // This now returns a file path like 'output/photo_student123.png' or null
-                transformedData.photo = await downloadAndPrepareImage(student.photo, student.student_id, outputDir);
-            } else {
-                transformedData.photo = null; // Ensure photo field exists but is null if no photo URL
+                transformedData.photo = await fetchImageAsBase64(student.photo);
             }
 
+            // ✨ NEW: Combine student's transformed data with the general school details
             const dataForCarbone = {
                 ...transformedData,
                 school: schoolDetails
@@ -273,19 +266,11 @@ async function GenerateOdtFile() {
 
             if (i === 0) {
                 console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
-                // Note: The 'photo' field will now be a file path, not a base64 string.
                 console.log(JSON.stringify(dataForCarbone, null, 2));
                 console.log(`---------------------------------------------------\n\n`);
             }
 
-            // ✨ CHANGE: Add options object to tell Carbone how to handle the photo
-            const carboneOptions = {
-                convertTo: {
-                    photo: 'image' // Tells Carbone to treat the 'photo' field value as an image path
-                }
-            };
-
-            const odtReport = await carboneRender(templatePath, dataForCarbone, carboneOptions);
+            const odtReport = await carboneRender(templatePath, dataForCarbone);
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             await fs.promises.writeFile(odtFilename, odtReport);
@@ -301,20 +286,23 @@ async function GenerateOdtFile() {
             pdfPaths.push(pdfPath);
         }
 
-        // ... (Merging, Compressing, and Uploading remains the same)
+        // STEP 5: Merge, COMPRESS, & Upload
         const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
-        const compressedPdfPath = path.join(outputDir, 'merged_compressed.pdf');
+        const compressedPdfPath = path.join(outputDir, 'merged_compressed.pdf'); // New path for compressed file
 
         if (pdfPaths.length > 0) {
             console.log('🔗 Merging all generated PDFs into one file...');
             await mergePdfs(pdfPaths, mergedPdfPath);
             console.log(`✅ Merged PDF created at: ${mergedPdfPath}`);
 
+            // 🔥 NEW COMPRESSION STEP
             await compressPdf(mergedPdfPath, compressedPdfPath);
 
+            // Optional: Log file size comparison
             const originalSize = (await fs.promises.stat(mergedPdfPath)).size / (1024 * 1024);
             const compressedSize = (await fs.promises.stat(compressedPdfPath)).size / (1024 * 1024);
             console.log(`📊 Compression Results: Original size: ${originalSize.toFixed(2)} MB, Compressed size: ${compressedSize.toFixed(2)} MB`);
+
 
             const filePath = `templates/marksheets/${schoolId}/result/${batchId}_${jobId}.pdf`;
             const fileBuffer = await fs.promises.readFile(compressedPdfPath);
