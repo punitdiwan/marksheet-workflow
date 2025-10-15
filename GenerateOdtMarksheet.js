@@ -260,7 +260,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
     // Check if header should be disabled (new environment variable DISABLE_HEADER)
     // const disableHeader = process.env.DISABLE_HEADER === 'true';
-    const disableHeader = process.env.DISABLE_HEADER === 'true';
+    const disableHeader = 'true';
 
     if (disableHeader) {
         // Remove header and add blank space with header height (default 1cm, adjust as needed)
