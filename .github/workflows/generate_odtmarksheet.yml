@@ -75,6 +75,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pdftk   
+          
+      - name: Install required system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxml2-utils unzip zip
 
       - name: Install Ghostscript
         run: |

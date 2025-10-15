@@ -68,8 +68,6 @@ async function mergePdfs(pdfPaths, outputPath) {
 
 // ✨ NEW Function: Compress PDF using Ghostscript
 async function compressPdf(inputPath, outputPath) {
-    // We use the 'ebook' setting, which provides a great balance
-    // between file size reduction and quality preservation for on-screen viewing.
     const command = `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outputPath}" "${inputPath}"`;
     try {
         console.log(`🗜️  Compressing PDF: ${path.basename(inputPath)}`);
@@ -81,8 +79,6 @@ async function compressPdf(inputPath, outputPath) {
         console.error(error.stdout);
         console.error('--- STDERR ---');
         console.error(error.stderr);
-        // Fallback: If compression fails, we can try to use the original file.
-        // For now, we'll throw an error to make the issue visible.
         throw new Error(`Ghostscript compression failed. See logs above.`);
     }
 }
@@ -132,10 +128,14 @@ async function processOdtTemplate(templatePath, tempDir) {
     await execPromise(`mkdir -p "${tempOdtDir}" && cd "${tempOdtDir}" && unzip "${templatePath}"`);
     console.log(`✅ Extracted template to ${tempOdtDir}`);
 
-    // 2. Pretty-print content.xml
+    // 2. Pretty-print content.xml (optional, skip if xmllint not found)
     const contentXmlPath = path.join(tempOdtDir, 'content.xml');
-    await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
-    console.log(`✅ Formatted content.xml`);
+    try {
+        await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
+        console.log(`✅ Formatted content.xml`);
+    } catch (err) {
+        console.warn(`⚠️ xmllint not found or formatting failed: ${err.message}. Using unformatted content.xml.`);
+    }
 
     // 3. Repack into a new ODT (mimetype first, uncompressed)
     await execPromise(`cd "${tempOdtDir}" && zip -0 "${newOdtPath}" mimetype`);
@@ -154,6 +154,7 @@ async function processOdtTemplate(templatePath, tempDir) {
 // --- MAIN FUNCTION ---
 async function GenerateOdtFile() {
     let outputDir = '';
+    let tempDir = ''; // Declare tempDir at function scope
     const jobId = process.env.JOB_ID;
     const schoolId = process.env.SCHOOL_ID;
 
@@ -175,7 +176,7 @@ async function GenerateOdtFile() {
 
         outputDir = path.join(process.cwd(), 'output');
         await fs.promises.mkdir(outputDir, { recursive: true });
-        const tempDir = path.join(outputDir, 'temp');
+        tempDir = path.join(outputDir, 'temp');
         await fs.promises.mkdir(tempDir, { recursive: true });
         const pdfPaths = [];
 
@@ -190,7 +191,6 @@ async function GenerateOdtFile() {
         if (!schoolDetailsResponse.ok) {
             throw new Error(`Failed to fetch school details: ${await schoolDetailsResponse.text()}`);
         }
-        // Assuming the API returns a single object with school data. Clean it once.
         let schoolDetails = cleanData(await schoolDetailsResponse.json());
         console.log("✅ School details fetched successfully.");
 
@@ -278,7 +278,10 @@ async function GenerateOdtFile() {
         console.log(`✅ Template saved locally to: ${templatePath}`);
 
         // Process the template
-        const processedTemplatePath = await processOdtTemplate(templatePath, tempDir);
+        const processedTemplatePath = await processOdtTemplate(templatePath, tempDir).catch(err => {
+            console.error(`❌ Failed to process template: ${err.message}. Using original template.`);
+            return templatePath; // Fallback to original template if processing fails
+        });
 
         // STEP 4: Render ODT & convert to PDF
         for (let i = 0; i < students.length; i++) {
@@ -321,7 +324,7 @@ async function GenerateOdtFile() {
 
         // STEP 5: Merge, COMPRESS, & Upload
         const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
-        const compressedPdfPath = path.join(outputDir, 'merged_compressed.pdf'); // New path for compressed file
+        const compressedPdfPath = path.join(outputDir, 'merged_compressed.pdf');
 
         if (pdfPaths.length > 0) {
             console.log('🔗 Merging all generated PDFs into one file...');
@@ -374,12 +377,13 @@ async function GenerateOdtFile() {
         if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
-        // process.exit(1);
     } finally {
         // Clean up temp directory
-        await fs.promises.rm(tempDir, { recursive: true, force: true }).catch((err) => {
-            console.warn(`⚠️ Failed to clean up temp directory: ${err.message}`);
-        });
+        if (tempDir) {
+            await fs.promises.rm(tempDir, { recursive: true, force: true }).catch((err) => {
+                console.warn(`⚠️ Failed to clean up temp directory: ${err.message}`);
+            });
+        }
     }
 }
 
