@@ -49,7 +49,11 @@ async function convertOdtToPdf(odtPath, outputDir) {
             console.warn(`[LibreOffice STDERR for ${path.basename(odtPath)}]:`, stderr);
         }
 
-        return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
+        const pdfPath = path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
+        if (!fs.existsSync(pdfPath)) {
+            throw new Error(`PDF output not created at: ${pdfPath}`);
+        }
+        return pdfPath;
     } catch (error) {
         console.error(`❌ LibreOffice command failed for ${path.basename(odtPath)}.`);
         console.error('--- STDOUT ---');
@@ -191,7 +195,7 @@ async function GenerateOdtFile() {
         if (!schoolDetailsResponse.ok) {
             throw new Error(`Failed to fetch school details: ${await schoolDetailsResponse.text()}`);
         }
-        let schoolDetails = cleanData(await schoolDetailsResponse.json());
+        const schoolDetails = cleanData(await schoolDetailsResponse.json());
         console.log("✅ School details fetched successfully.");
 
         // Transform logo field to full URL
@@ -309,6 +313,7 @@ async function GenerateOdtFile() {
             const odtReport = await carboneRender(processedTemplatePath, dataForCarbone);
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
+            console.log(`✅ ODT content for ${student.full_name} written to ${odtFilename}`);
             await fs.promises.writeFile(odtFilename, odtReport);
             const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
 
