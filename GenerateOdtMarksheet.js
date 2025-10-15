@@ -1,14 +1,19 @@
-const fs = require('fs');
+const fs = require('fs').promises;
 const path = require('path');
 const { exec } = require('child_process');
 const util = require('util');
 const fetch = require('node-fetch');
 const carbone = require('carbone');
 const FormData = require('form-data');
+const yauzl = require('yauzl');
+const yazl = require('yazl');
+const sharp = require('sharp');
+const xml2js = require('xml2js');
 require('dotenv').config();
 
 const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
+const parseXml = util.promisify(xml2js.parseString);
 
 // --- UTILITY FUNCTIONS ---
 async function updateJobHistory(jobId, schoolId, payload) {
@@ -40,20 +45,16 @@ async function downloadFile(url) {
 }
 
 async function convertOdtToPdf(odtPath, outputDir) {
-    const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" --infilter="writer_pdf_Export" "${odtPath}"`;
+    const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
     try {
-        console.log(`🔄 Running conversion for: ${path.basename(odtPath)} with recovery attempt`);
+        console.log(`🔄 Running conversion for: ${path.basename(odtPath)}`);
         const { stdout, stderr } = await execPromise(command);
 
         if (stderr) {
             console.warn(`[LibreOffice STDERR for ${path.basename(odtPath)}]:`, stderr);
         }
 
-        const pdfPath = path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
-        if (!fs.existsSync(pdfPath)) {
-            throw new Error(`PDF output not created at: ${pdfPath}`);
-        }
-        return pdfPath;
+        return path.join(outputDir, path.basename(odtPath, '.odt') + '.pdf');
     } catch (error) {
         console.error(`❌ LibreOffice command failed for ${path.basename(odtPath)}.`);
         console.error('--- STDOUT ---');
@@ -70,7 +71,6 @@ async function mergePdfs(pdfPaths, outputPath) {
     await execPromise(command);
 }
 
-// ✨ NEW Function: Compress PDF using Ghostscript
 async function compressPdf(inputPath, outputPath) {
     const command = `gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dQUIET -dBATCH -sOutputFile="${outputPath}" "${inputPath}"`;
     try {
@@ -87,16 +87,304 @@ async function compressPdf(inputPath, outputPath) {
     }
 }
 
-async function fetchImageAsBase64(url) {
+async function fetchImage(url) {
     try {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Failed to fetch image: ${url}`);
-        const buffer = Buffer.from(await res.arrayBuffer());
-        const mimeType = url.endsWith(".png") ? "image/png" : "image/jpeg";
-        return `data:${mimeType};base64,${buffer.toString("base64")}`;
+        const arrayBuffer = await res.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        // Convert to JPEG to match template image format
+        return await sharp(buffer).jpeg().toBuffer();
     } catch (err) {
-        console.warn("⚠️ Could not fetch photo for student:", url, err.message);
+        console.warn("⚠️ Could not fetch or convert photo:", url, err.message);
         return null;
+    }
+}
+
+async function waitForFile(filePath, retries = 5, delay = 100) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await fs.access(filePath);
+            return true;
+        } catch (err) {
+            if (err.code === 'ENOENT' && i < retries - 1) {
+                console.log(`⌛ Waiting for ${filePath} to be available (${i + 1}/${retries})...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            } else {
+                throw err;
+            }
+        }
+    }
+    return false;
+}
+
+async function findImageFilename(contentXmlPath, picturesDir, frameName) {
+    try {
+        const contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+        const parsedXml = await parseXml(contentXml, {
+            explicitArray: false,
+            ignoreAttrs: false,
+            mergeAttrs: true,
+            normalizeTags: false,
+            explicitChildren: true,
+            preserveChildrenOrder: true
+        });
+
+        console.log(`DEBUG: Starting search for draw:image with draw:name="${frameName}"`);
+
+        // Recursive function to find draw:frame elements
+        function findFrames(node) {
+            let frames = [];
+            if (typeof node !== 'object' || node === null) return frames;
+
+            // Check if current node is a draw:frame
+            if (node['draw:frame']) {
+                const frame = node['draw:frame'];
+                if (Array.isArray(frame)) {
+                    frames.push(...frame);
+                } else {
+                    frames.push(frame);
+                }
+            }
+
+            // Recursively search through all child nodes
+            for (const key in node) {
+                if (Object.prototype.hasOwnProperty.call(node, key)) {
+                    if (Array.isArray(node[key])) {
+                        node[key].forEach(child => {
+                            frames.push(...findFrames(child));
+                        });
+                    } else if (typeof node[key] === 'object') {
+                        frames.push(...findFrames(node[key]));
+                    }
+                }
+            }
+            return frames;
+        }
+
+        // Find all draw:frame elements
+        const textContent = parsedXml['office:document-content']?.['office:body']?.['office:text'] || {};
+        const drawFrames = findFrames(textContent);
+        console.log(`DEBUG: Found ${drawFrames.length} draw:frame elements`);
+
+        // Log all draw:frame elements for debugging
+        drawFrames.forEach((frame, index) => {
+            const name = frame['draw:name'] || 'undefined';
+            const image = frame['draw:image'];
+            const href = image?.['xlink:href'] || 'undefined';
+            console.log(`DEBUG: Frame ${index + 1} - draw:name="${name}", xlink:href="${href}"`);
+        });
+
+        // Look for the specified frameName
+        for (const frame of drawFrames) {
+            if (frame['draw:name'] === frameName && frame['draw:image']) {
+                const image = frame['draw:image'];
+                const href = image['xlink:href'];
+                console.log(`DEBUG: Found draw:image with draw:name="${frameName}", href=${href}`);
+                if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
+                    const filename = href.replace('Pictures/', '');
+                    const filePath = path.join(picturesDir, filename);
+                    try {
+                        await fs.access(filePath);
+                        console.log(`DEBUG: Confirmed image file exists: ${filePath}`);
+                        return filename;
+                    } catch (err) {
+                        console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory:`, err.message);
+                    }
+                }
+            }
+        }
+
+        console.warn(`⚠️ No image with draw:name="${frameName}" found in content.xml.`);
+        return null;
+    } catch (err) {
+        console.error(`❌ Failed to parse content.xml or read Pictures directory for ${frameName}:`, err);
+        return null;
+    }
+}
+
+async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) {
+    const studentDir = path.join(tempDir, `student_${student.student_id}`);
+    await fs.mkdir(studentDir, { recursive: true });
+
+    // Unzip ODT
+    const unzipPromise = new Promise((resolve, reject) => {
+        yauzl.open(templatePath, { lazyEntries: true }, (err, zipfile) => {
+            if (err) return reject(err);
+            zipfile.readEntry();
+            zipfile.on('entry', async (entry) => {
+                const entryPath = path.join(studentDir, entry.fileName);
+                if (/\/$/.test(entry.fileName)) {
+                    await fs.mkdir(entryPath, { recursive: true });
+                    zipfile.readEntry();
+                } else {
+                    zipfile.openReadStream(entry, async (err, readStream) => {
+                        if (err) return reject(err);
+                        await fs.mkdir(path.dirname(entryPath), { recursive: true });
+                        const writeStream = require('fs').createWriteStream(entryPath);
+                        readStream.pipe(writeStream);
+                        readStream.on('end', () => zipfile.readEntry());
+                        readStream.on('error', reject);
+                    });
+                }
+            });
+            zipfile.on('end', () => resolve());
+            zipfile.on('error', reject);
+        });
+    });
+
+    try {
+        await unzipPromise;
+        console.log(`✅ Unzipped template for ${student.full_name} to ${studentDir}`);
+    } catch (err) {
+        console.error(`❌ Failed to unzip template for ${student.full_name}:`, err);
+        return templatePath;
+    }
+
+    const contentXmlPath = path.join(studentDir, 'content.xml');
+    const picturesDir = path.join(studentDir, 'Pictures');
+    let pictureFiles = [];
+
+    // Check Pictures directory contents
+    try {
+        pictureFiles = await fs.readdir(picturesDir);
+        console.log(`DEBUG: Pictures directory contents: ${pictureFiles.join(', ')}`);
+    } catch (err) {
+        console.warn(`⚠️ Pictures directory not found or empty:`, err.message);
+        pictureFiles = [];
+    }
+
+    // Handle case based on number of files in Pictures directory
+    if (pictureFiles.length === 1) {
+        // Only one file: assume it's the school logo
+        if (!schoolDetails.logo || !schoolDetails.logo.startsWith("http")) {
+            console.warn(`⚠️ No valid school logo URL in schoolDetails: ${schoolDetails.logo || 'undefined'}. Using original template.`);
+            return templatePath;
+        }
+
+        const schoolLogoBuffer = await fetchImage(schoolDetails.logo);
+        if (!schoolLogoBuffer) {
+            console.warn(`⚠️ Failed to fetch school logo from ${schoolDetails.logo}. Using original template.`);
+            return templatePath;
+        }
+
+        const schoolLogoPath = path.join(picturesDir, pictureFiles[0]);
+        await fs.mkdir(picturesDir, { recursive: true });
+        await fs.writeFile(schoolLogoPath, schoolLogoBuffer);
+        console.log(`✅ Replaced school logo at ${schoolLogoPath} (single file case)`);
+    } else if (pictureFiles.length === 2) {
+        // Two files: handle both student image and school logo
+        // Handle student image
+        let studentImageFilename = null;
+        if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
+            const studentImageBuffer = await fetchImage(student.photo);
+            if (studentImageBuffer) {
+                studentImageFilename = await findImageFilename(contentXmlPath, picturesDir, 'studentImage');
+                if (studentImageFilename) {
+                    const studentImagePath = path.join(picturesDir, studentImageFilename);
+                    await fs.mkdir(picturesDir, { recursive: true });
+                    await fs.writeFile(studentImagePath, studentImageBuffer);
+                    console.log(`✅ Wrote student image to ${studentImagePath}`);
+
+                    // Update content.xml for student image
+                    try {
+                        let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+                        contentXml = contentXml.replace(
+                            new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="studentImage")`, 'i'),
+                            `Pictures/${studentImageFilename}`
+                        );
+                        await fs.writeFile(contentXmlPath, contentXml);
+                        console.log(`✅ Updated content.xml for student image for ${student.full_name}`);
+                    } catch (err) {
+                        console.error(`❌ Failed to update content.xml for student image for ${student.full_name}:`, err);
+                        return templatePath;
+                    }
+                } else {
+                    console.warn(`⚠️ No student image found for ${student.full_name}. Skipping student image replacement.`);
+                }
+            } else {
+                console.warn(`⚠️ Failed to fetch student image for ${student.full_name}. Skipping student image replacement.`);
+            }
+        } else {
+            console.log(`⚠️ No valid student photo URL for ${student.full_name}. Skipping student image replacement.`);
+        }
+
+        // Handle school logo
+        let schoolLogoFilename = null;
+        if (schoolDetails.logo && schoolDetails.logo.startsWith("http")) {
+            const schoolLogoBuffer = await fetchImage(schoolDetails.logo);
+            if (schoolLogoBuffer) {
+                schoolLogoFilename = await findImageFilename(contentXmlPath, picturesDir, 'Logo');
+                if (schoolLogoFilename) {
+                    const schoolLogoPath = path.join(picturesDir, schoolLogoFilename);
+                    await fs.mkdir(picturesDir, { recursive: true });
+                    await fs.writeFile(schoolLogoPath, schoolLogoBuffer);
+                    console.log(`✅ Wrote school logo to ${schoolLogoPath}`);
+
+                    // Update content.xml for school logo
+                    try {
+                        let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+                        contentXml = contentXml.replace(
+                            new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="Logo")`, 'i'),
+                            `Pictures/${schoolLogoFilename}`
+                        );
+                        await fs.writeFile(contentXmlPath, contentXml);
+                        console.log(`✅ Updated content.xml for school logo for ${student.full_name}`);
+                    } catch (err) {
+                        console.error(`❌ Failed to update content.xml for school logo for ${student.full_name}:`, err);
+                        return templatePath;
+                    }
+                } else {
+                    console.warn(`⚠️ No school logo found in content.xml for ${student.full_name}. Skipping school logo replacement.`);
+                }
+            } else {
+                console.warn(`⚠️ Failed to fetch school logo from ${schoolDetails.logo}. Skipping school logo replacement.`);
+            }
+        } else {
+            console.warn(`⚠️ No valid school logo URL in schoolDetails: ${schoolDetails.logo || 'undefined'}. Skipping school logo replacement.`);
+        }
+    } else {
+        console.warn(`⚠️ Unexpected number of files in Pictures directory (${pictureFiles.length}). Using original template.`);
+        return templatePath;
+    }
+
+    // Re-zip to create new ODT
+    const newOdtPath = path.join(tempDir, `${student.full_name?.replace(/\s+/g, '_') || student.student_id}.odt`);
+    const zip = new yazl.ZipFile();
+    const walkDir = async (dir, zipPath = '') => {
+        const files = await fs.readdir(dir);
+        for (const file of files) {
+            const fullPath = path.join(dir, file);
+            const stats = await fs.stat(fullPath);
+            const zipEntry = path.join(zipPath, file);
+            if (stats.isDirectory()) {
+                await walkDir(fullPath, zipEntry);
+            } else {
+                zip.addFile(fullPath, zipEntry);
+            }
+        }
+    };
+
+    try {
+        await walkDir(studentDir);
+        const writeStream = require('fs').createWriteStream(newOdtPath);
+        zip.outputStream.pipe(writeStream);
+        await new Promise((resolve, reject) => {
+            writeStream.on('finish', resolve);
+            writeStream.on('error', reject);
+            zip.end();
+        });
+        console.log(`✅ Zipped new ODT for ${student.full_name} at ${newOdtPath}`);
+
+        // Wait for the file to be fully written
+        const fileExists = await waitForFile(newOdtPath);
+        if (!fileExists) {
+            throw new Error(`File ${newOdtPath} was not created or accessible after zipping`);
+        }
+        return newOdtPath;
+    } catch (err) {
+        console.error(`❌ Failed to re-zip ODT for ${student.full_name}:`, err);
+        return templatePath;
     }
 }
 
@@ -123,42 +411,10 @@ function cleanData(data) {
     return data;
 }
 
-// --- NEW FUNCTION: Process ODT Template ---
-async function processOdtTemplate(templatePath, tempDir) {
-    const tempOdtDir = path.join(tempDir, 'odt_temp');
-    const newOdtPath = path.join(tempDir, 'template_new.odt');
-
-    // 1. Create temp folder and extract ODT contents
-    await execPromise(`mkdir -p "${tempOdtDir}" && cd "${tempOdtDir}" && unzip "${templatePath}"`);
-    console.log(`✅ Extracted template to ${tempOdtDir}`);
-
-    // 2. Pretty-print content.xml (optional, skip if xmllint not found)
-    const contentXmlPath = path.join(tempOdtDir, 'content.xml');
-    try {
-        await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
-        console.log(`✅ Formatted content.xml`);
-    } catch (err) {
-        console.warn(`⚠️ xmllint not found or formatting failed: ${err.message}. Using unformatted content.xml.`);
-    }
-
-    // 3. Repack into a new ODT (mimetype first, uncompressed)
-    await execPromise(`cd "${tempOdtDir}" && zip -0 "${newOdtPath}" mimetype`);
-    await execPromise(`cd "${tempOdtDir}" && zip -r "${newOdtPath}" * -x mimetype`);
-    console.log(`✅ Repacked new ODT to ${newOdtPath}`);
-
-    // Wait for the file to be fully written
-    await new Promise(resolve => setTimeout(resolve, 100));
-    if (!fs.existsSync(newOdtPath)) {
-        throw new Error(`Failed to create new ODT at ${newOdtPath}`);
-    }
-
-    return newOdtPath;
-}
-
 // --- MAIN FUNCTION ---
 async function GenerateOdtFile() {
     let outputDir = '';
-    let tempDir = ''; // Declare tempDir at function scope
+    let tempDir = '';
     const jobId = process.env.JOB_ID;
     const schoolId = process.env.SCHOOL_ID;
 
@@ -179,12 +435,12 @@ async function GenerateOdtFile() {
         }
 
         outputDir = path.join(process.cwd(), 'output');
-        await fs.promises.mkdir(outputDir, { recursive: true });
+        await fs.mkdir(outputDir, { recursive: true });
         tempDir = path.join(outputDir, 'temp');
-        await fs.promises.mkdir(tempDir, { recursive: true });
+        await fs.mkdir(tempDir, { recursive: true });
         const pdfPaths = [];
 
-        // ✨ STEP 0: NEW - Fetch School Details
+        // Fetch School Details
         console.log("🏫 Fetching school details...");
         const schoolDetailsPayload = { school_id: schoolId };
         const schoolDetailsResponse = await fetch('https://demoschool.edusparsh.com/api/get_School_Detail', {
@@ -195,7 +451,7 @@ async function GenerateOdtFile() {
         if (!schoolDetailsResponse.ok) {
             throw new Error(`Failed to fetch school details: ${await schoolDetailsResponse.text()}`);
         }
-        const schoolDetails = cleanData(await schoolDetailsResponse.json());
+        let schoolDetails = cleanData(await schoolDetailsResponse.json());
         console.log("✅ School details fetched successfully.");
 
         // Transform logo field to full URL
@@ -229,8 +485,6 @@ async function GenerateOdtFile() {
 
         const studentResponseJson = await studentResponse.json();
         let students = studentResponseJson.students || studentResponseJson.data || [];
-
-        console.log("students data from cce marks api", students[0]);
 
         if (studentIdsInput) {
             const requestedStudentIds = new Set(studentIdsInput.split(','));
@@ -278,37 +532,24 @@ async function GenerateOdtFile() {
         console.log("📥 Downloading template...");
         const templateBuffer = await downloadFile(templateUrl);
         const templatePath = path.join(outputDir, 'template.odt');
-        await fs.promises.writeFile(templatePath, templateBuffer);
+        await fs.writeFile(templatePath, templateBuffer);
         console.log(`✅ Template saved locally to: ${templatePath}`);
-
-        // Process the template
-        const processedTemplatePath = await processOdtTemplate(templatePath, tempDir).catch(err => {
-            console.error(`❌ Failed to process template: ${err.message}. Using original template.`);
-            return templatePath; // Fallback to original template if processing fails
-        });
 
         // STEP 4: Render ODT & convert to PDF
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             let transformedData = transformedStudents[i];
             transformedData = cleanData(transformedData);
-            if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
-                transformedData.photo = await fetchImageAsBase64(student.photo);
-                // Log image size to debug potential corruption
-                if (transformedData.photo) {
-                    const base64Data = transformedData.photo.split(',')[1];
-                    const buffer = Buffer.from(base64Data, 'base64');
-                    console.log(`📸 Image size for ${student.full_name}: ${buffer.length} bytes`);
-                }
-            }
 
-            // ✨ NEW: Combine student's transformed data with the general school details
+            console.log(`📝 Processing student: ${student.full_name}`);
+
+            // Replace images in ODT (based on number of files in Pictures)
+            const modifiedOdtPath = await replaceImageInOdt(templatePath, student, schoolDetails, tempDir);
+
             const dataForCarbone = {
                 ...transformedData,
                 school: schoolDetails
             };
-
-            console.log(`📝 Processing student: ${student.full_name}`);
 
             if (i === 0) {
                 console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
@@ -316,23 +557,13 @@ async function GenerateOdtFile() {
                 console.log(`---------------------------------------------------\n\n`);
             }
 
-            const odtReport = await carboneRender(processedTemplatePath, dataForCarbone);
+            const odtReport = await carboneRender(modifiedOdtPath, dataForCarbone);
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
-            console.log(`✅ ODT content for ${student.full_name} written to ${odtFilename}`);
-            await fs.promises.writeFile(odtFilename, odtReport);
-
-            // Validate ODT by attempting to open it with LibreOffice in repair mode
-            try {
-                await execPromise(`libreoffice --headless --convert-to odt:"writer8" --infilter="writer8" "${odtFilename}"`);
-                console.log(`✅ Validated ODT for ${student.full_name}`);
-            } catch (validationError) {
-                console.warn(`⚠️ ODT validation failed for ${student.full_name}: ${validationError.message}. Attempting conversion anyway.`);
-            }
-
+            await fs.writeFile(odtFilename, odtReport);
             const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
 
-            if (!fs.existsSync(pdfPath)) {
+            if (!require('fs').existsSync(pdfPath)) {
                 console.error(`\n\n--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
                 console.error(JSON.stringify(dataForCarbone, null, 2));
                 console.error(`------------------------------------------------------------------\n\n`);
@@ -351,16 +582,14 @@ async function GenerateOdtFile() {
             await mergePdfs(pdfPaths, mergedPdfPath);
             console.log(`✅ Merged PDF created at: ${mergedPdfPath}`);
 
-            // 🔥 NEW COMPRESSION STEP
             await compressPdf(mergedPdfPath, compressedPdfPath);
 
-            // Optional: Log file size comparison
-            const originalSize = (await fs.promises.stat(mergedPdfPath)).size / (1024 * 1024);
-            const compressedSize = (await fs.promises.stat(compressedPdfPath)).size / (1024 * 1024);
+            const originalSize = (await fs.stat(mergedPdfPath)).size / (1024 * 1024);
+            const compressedSize = (await fs.stat(compressedPdfPath)).size / (1024 * 1024);
             console.log(`📊 Compression Results: Original size: ${originalSize.toFixed(2)} MB, Compressed size: ${compressedSize.toFixed(2)} MB`);
 
             const filePath = `templates/marksheets/${schoolId}/result/${batchId}_${jobId}.pdf`;
-            const fileBuffer = await fs.promises.readFile(compressedPdfPath);
+            const fileBuffer = await fs.readFile(compressedPdfPath);
             const formData = new FormData();
 
             formData.append('photo', fileBuffer, {
@@ -391,16 +620,15 @@ async function GenerateOdtFile() {
         }
 
         console.log("🎉 Marksheets generated and uploaded successfully.");
-
     } catch (error) {
         console.error('❌ FATAL ERROR during marksheet generation:', error.message || error);
         if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
+        throw error;
     } finally {
-        // Clean up temp directory
         if (tempDir) {
-            await fs.promises.rm(tempDir, { recursive: true, force: true }).catch((err) => {
+            await fs.rm(tempDir, { recursive: true, force: true }).catch((err) => {
                 console.warn(`⚠️ Failed to clean up temp directory: ${err.message}`);
             });
         }
