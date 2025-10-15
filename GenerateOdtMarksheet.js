@@ -40,9 +40,9 @@ async function downloadFile(url) {
 }
 
 async function convertOdtToPdf(odtPath, outputDir) {
-    const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
+    const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" --infilter="writer_pdf_Export" "${odtPath}"`;
     try {
-        console.log(`🔄 Running conversion for: ${path.basename(odtPath)}`);
+        console.log(`🔄 Running conversion for: ${path.basename(odtPath)} with recovery attempt`);
         const { stdout, stderr } = await execPromise(command);
 
         if (stderr) {
@@ -294,6 +294,12 @@ async function GenerateOdtFile() {
             transformedData = cleanData(transformedData);
             if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
                 transformedData.photo = await fetchImageAsBase64(student.photo);
+                // Log image size to debug potential corruption
+                if (transformedData.photo) {
+                    const base64Data = transformedData.photo.split(',')[1];
+                    const buffer = Buffer.from(base64Data, 'base64');
+                    console.log(`📸 Image size for ${student.full_name}: ${buffer.length} bytes`);
+                }
             }
 
             // ✨ NEW: Combine student's transformed data with the general school details
@@ -315,6 +321,15 @@ async function GenerateOdtFile() {
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             console.log(`✅ ODT content for ${student.full_name} written to ${odtFilename}`);
             await fs.promises.writeFile(odtFilename, odtReport);
+
+            // Validate ODT by attempting to open it with LibreOffice in repair mode
+            try {
+                await execPromise(`libreoffice --headless --convert-to odt:"writer8" --infilter="writer8" "${odtFilename}"`);
+                console.log(`✅ Validated ODT for ${student.full_name}`);
+            } catch (validationError) {
+                console.warn(`⚠️ ODT validation failed for ${student.full_name}: ${validationError.message}. Attempting conversion anyway.`);
+            }
+
             const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
 
             if (!fs.existsSync(pdfPath)) {
