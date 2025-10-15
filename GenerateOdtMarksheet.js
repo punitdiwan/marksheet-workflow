@@ -247,6 +247,39 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         pictureFiles = [];
     }
 
+    // Read and parse content.xml
+    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+    const parsedXml = await parseXml(contentXml, {
+        explicitArray: false,
+        ignoreAttrs: false,
+        mergeAttrs: true,
+        normalizeTags: false,
+        explicitChildren: true,
+        preserveChildrenOrder: true
+    });
+
+    // Check if header should be disabled (new environment variable DISABLE_HEADER)
+    // const disableHeader = process.env.DISABLE_HEADER === 'true';
+    const disableHeader = process.env.DISABLE_HEADER === 'true';
+
+    if (disableHeader) {
+        // Remove header and add blank space with header height (default 1cm, adjust as needed)
+        const headerStyle = parsedXml['office:document-content']?.['office:styles']?.['style:style']?.find(s => s['style:name'] === 'Header');
+        const headerHeight = headerStyle?.['style:properties']?.['fo:min-height'] || '1cm'; // Default to 1cm if not found
+
+        // Replace header with a blank paragraph with margin
+        contentXml = contentXml.replace(
+            /<office:master-styles>[\s\S]*?<\/office:master-styles>/,
+            `<office:master-styles>
+                <style:master-page style:name="Standard" style:page-layout-name="Mpm1">
+                    <style:header/>
+                    <text:p text:style-name="HeaderSpace" fo:margin-top="${headerHeight}" fo:margin-bottom="0cm"/>
+                </style:master-page>
+            </office:master-styles>`
+        );
+        console.log(`✅ Disabled header and added ${headerHeight} blank space for ${student.full_name}`);
+    }
+
     if (pictureFiles.length === 1) {
         if (!schoolDetails.logo || !schoolDetails.logo.startsWith("http")) {
             console.warn(`⚠️ No valid school logo URL in schoolDetails: ${schoolDetails.logo || 'undefined'}. Using original template.`);
@@ -266,10 +299,11 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
         // Format content.xml with xmllint
         try {
-            await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
+            await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`, { input: contentXml });
             console.log(`✅ Formatted content.xml for ${student.full_name}`);
         } catch (err) {
             console.warn(`⚠️ xmllint formatting failed: ${err.message}. Using unformatted content.xml.`);
+            await fs.writeFile(contentXmlPath, contentXml);
         }
     } else if (pictureFiles.length === 2) {
         let studentImageFilename = null;
@@ -282,12 +316,12 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
                     await fs.writeFile(studentImagePath, studentImageBuffer);
                     console.log(`✅ Wrote student image to ${studentImagePath}`);
 
-                    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-                    contentXml = contentXml.replace(
+                    let contentXmlUpdated = await fs.readFile(contentXmlPath, 'utf-8');
+                    contentXmlUpdated = contentXmlUpdated.replace(
                         new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="studentImage")`, 'i'),
                         `Pictures/${studentImageFilename}`
                     );
-                    await fs.writeFile(contentXmlPath, contentXml);
+                    await fs.writeFile(contentXmlPath, contentXmlUpdated);
                     console.log(`✅ Updated content.xml for student image for ${student.full_name}`);
                 }
             }
@@ -303,12 +337,12 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
                     await fs.writeFile(schoolLogoPath, schoolLogoBuffer);
                     console.log(`✅ Wrote school logo to ${schoolLogoPath}`);
 
-                    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-                    contentXml = contentXml.replace(
+                    let contentXmlUpdated = await fs.readFile(contentXmlPath, 'utf-8');
+                    contentXmlUpdated = contentXmlUpdated.replace(
                         new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="Logo")`, 'i'),
                         `Pictures/${schoolLogoFilename}`
                     );
-                    await fs.writeFile(contentXmlPath, contentXml);
+                    await fs.writeFile(contentXmlPath, contentXmlUpdated);
                     console.log(`✅ Updated content.xml for school logo for ${student.full_name}`);
                 }
             }
