@@ -280,6 +280,14 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         console.log(`✅ Disabled header and added ${headerHeight} blank space for ${student.full_name}`);
     }
 
+    // Remove the specified block and replace with blank space
+    const blockToRemove = /<text:p text:style-name="P8"\/><text:p text:style-name="P2" loext:marker-style-name="T2">[\s\S]*?<text:p text:style-name="P7"><draw:custom-shape text:anchor-type="char" draw:z-index="0" draw:name="AutoShape 2" draw:style-name="gr1" draw:text-style-name="P39" svg:width="20\.85cm" svg:height="0\.003cm" svg:x="0\.026cm" svg:y="0\.3cm"><tex/;
+    const replacement = `<text:p text:style-name="P4" fo:margin-top="0cm" fo:margin-bottom="3.255cm"/>`;
+    contentXml = contentXml.replace(blockToRemove, replacement);
+    console.log(`✅ Removed header block and added 3.255cm blank space for ${student.full_name}`);
+
+    await fs.writeFile(contentXmlPath, contentXml);
+
     if (pictureFiles.length === 1) {
         if (!schoolDetails.logo || !schoolDetails.logo.startsWith("http")) {
             console.warn(`⚠️ No valid school logo URL in schoolDetails: ${schoolDetails.logo || 'undefined'}. Using original template.`);
