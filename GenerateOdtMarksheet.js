@@ -9,6 +9,7 @@ const yauzl = require('yauzl');
 const yazl = require('yazl');
 const sharp = require('sharp');
 const xml2js = require('xml2js');
+const { PDFDocument, rgb } = require('pdf-lib');
 require('dotenv').config();
 
 const execPromise = util.promisify(exec);
@@ -62,6 +63,75 @@ async function convertOdtToPdf(odtPath, outputDir) {
         console.error('--- STDERR ---');
         console.error(error.stderr);
         throw new Error(`LibreOffice conversion failed. See logs above.`);
+    }
+}
+
+/**
+ * Adds a white overlay to the top of a PDF file with configurable margins.
+ * @param {string} inputPdfPath - The path to the input PDF.
+ * @param {string} outputPdfPath - The path where the modified PDF will be saved.
+ * @param {object} [options={}] - Configuration for the overlay.
+ * @param {number} [options.heightCm=5] - The height of the overlay itself in centimeters.
+ * @param {number} [options.topMarginCm=0] - The space from the absolute top of the page before the overlay begins, in centimeters.
+ * @param {number} [options.leftMarginCm=0] - The margin from the left edge of the page in centimeters.
+ * @param {number} [options.rightMarginCm=0] - The margin from the right edge of the page in centimeters.
+ */
+async function addWhiteOverlay(inputPdfPath, outputPdfPath, options = {}) {
+    const {
+        heightCm = 5,
+        topMarginCm = 0,
+        leftMarginCm = 0,
+        rightMarginCm = 0,
+    } = options;
+
+    console.log(`🎨 Adding white overlay to ${path.basename(inputPdfPath)} with options:`, { heightCm, topMarginCm, leftMarginCm, rightMarginCm });
+
+    try {
+        const POINTS_PER_CM = 28.3465; // Standard conversion factor for PDF points (72 DPI)
+
+        // Convert all dimensions from cm to points
+        const overlayHeight = heightCm * POINTS_PER_CM;
+        const topMargin = topMarginCm * POINTS_PER_CM;
+        const leftMargin = leftMarginCm * POINTS_PER_CM;
+        const rightMargin = rightMarginCm * POINTS_PER_CM;
+
+        const existingPdfBytes = await fs.readFile(inputPdfPath);
+        const pdfDoc = await PDFDocument.load(existingPdfBytes);
+        const pages = pdfDoc.getPages();
+
+        for (const page of pages) {
+            const { width: pageWidth, height: pageHeight } = page.getSize();
+
+            // Calculate the dimensions and position of the rectangle
+            const rectX = leftMargin;
+            const rectY = pageHeight - topMargin - overlayHeight;
+            const rectWidth = pageWidth - leftMargin - rightMargin;
+            const rectHeight = overlayHeight;
+
+            // Ensure width is not negative if margins are too large
+            if (rectWidth < 0) {
+                console.warn(`⚠️  Margins (${leftMarginCm}cm + ${rightMarginCm}cm) are wider than the page. Overlay will not be drawn for this page.`);
+                continue; // Skip drawing on this page
+            }
+
+            page.drawRectangle({
+                x: rectX,
+                y: rectY,
+                width: rectWidth,
+                height: rectHeight,
+                color: rgb(1, 1, 1), // White
+                borderWidth: 0,
+            });
+        }
+
+        const pdfBytes = await pdfDoc.save();
+        await fs.writeFile(outputPdfPath, pdfBytes);
+        console.log(`✅ Overlay added successfully. Saved to ${outputPdfPath}`);
+    } catch (error) {
+        console.error(`❌ Failed to add white overlay to ${path.basename(inputPdfPath)}:`, error);
+        // Fallback: copy the original file to the output path so the process can continue
+        await fs.copyFile(inputPdfPath, outputPdfPath);
+        console.warn(`⚠️ Copied original PDF to output path as a fallback.`);
     }
 }
 
@@ -407,6 +477,11 @@ async function GenerateOdtFile() {
         const groupIds = groupid?.split(",");
         const studentIdsInput = process.env.STUDENT_IDS;
 
+        // --- NEW: Check environment variable to decide if overlay should be applied ---
+        // const applyOverlay = process.env.APPLY_WHITE_OVERLAY === 'true';
+        const applyOverlay = "false" === 'true'; // Force overlay to always be applied
+        console.log(`White overlay will be applied: ${applyOverlay}`);
+
         if (!templateUrl || !schoolId || !batchId || !jobId || !courseId || !groupIds) {
             throw new Error('❌ Missing required environment variables from GitHub Actions inputs.');
         }
@@ -513,6 +588,16 @@ async function GenerateOdtFile() {
         console.log(`✅ Template saved locally to: ${templatePath}`);
 
         // STEP 4: Render ODT & convert to PDF
+        // --- START: CONFIGURATION FOR THE WHITE OVERLAY ---
+        // Change these values to control the size and position of the white box.
+        // All units are in centimeters. This will only be used if APPLY_WHITE_OVERLAY is 'true'.
+        const overlayOptions = {
+            heightCm: 4.3,       // Height of the overlay itself.
+            topMarginCm: 0.2,      // Space from the top of the page before the overlay starts.
+            leftMarginCm: 0.2,   // Space to leave on the left side (from the page edge).
+            rightMarginCm: 0.2,  // Space to leave on the right side (from the page edge).
+        };
+
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             let transformedData = transformedStudents[i];
@@ -534,20 +619,35 @@ async function GenerateOdtFile() {
                 console.log(`---------------------------------------------------\n\n`);
             }
 
-            const odtReport = await carboneRender(modifiedOdtPath, dataForCarbone);
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
+            const odtReport = await carboneRender(modifiedOdtPath, dataForCarbone);
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             await fs.writeFile(odtFilename, odtReport);
-            const pdfPath = await convertOdtToPdf(odtFilename, outputDir);
 
-            if (!require('fs').existsSync(pdfPath)) {
+            // Convert to PDF
+            const originalPdfPath = await convertOdtToPdf(odtFilename, outputDir);
+            let finalPdfPath = originalPdfPath; // Default to the original PDF
+
+            // ---: Conditionally apply the overlay ---
+            if (applyOverlay) {
+                const modifiedPdfPath = path.join(outputDir, `${fileSafeName}_modified.pdf`);
+                await addWhiteOverlay(originalPdfPath, modifiedPdfPath, overlayOptions);
+                finalPdfPath = modifiedPdfPath; // If overlay is applied, use the modified path for merging
+            } else {
+                console.log(`📜 Skipping white overlay for ${student.full_name} as per environment setting.`);
+            }
+
+            // Check for the existence of the final PDF to be used
+            if (!require('fs').existsSync(finalPdfPath)) {
                 console.error(`\n\n--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
                 console.error(JSON.stringify(dataForCarbone, null, 2));
                 console.error(`------------------------------------------------------------------\n\n`);
-                throw new Error(`PDF generation failed for "${student.full_name}". Output file not found at: ${pdfPath}.`);
+                throw new Error(`PDF generation failed for "${student.full_name}". Output file not found at: ${finalPdfPath}.`);
             }
-            console.log(`✅ Successfully converted PDF for ${student.full_name}`);
-            pdfPaths.push(pdfPath);
+            console.log(`✅ Successfully created final PDF for ${student.full_name}`);
+
+            // Add the path of the final PDF to the array for merging
+            pdfPaths.push(finalPdfPath);
         }
 
         // STEP 5: Merge, COMPRESS, & Upload
