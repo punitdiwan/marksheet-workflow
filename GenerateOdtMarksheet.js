@@ -491,51 +491,46 @@ async function GenerateOdtFile() {
             // Add quotes around unquoted property names (basic fix)
             fixedJson = fixedJson.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*):/g, '$1"$2":');
 
-            // Ensure boolean values have quotes removed if needed (they shouldn't, but just in case)
-            fixedJson = fixedJson.replace(/:true/g, ':"true"').replace(/:false/g, ':"false"');
-
             console.log(`🔧 Fixed TEMPLATE_HEADER attempt: "${fixedJson}"`);
 
             try {
                 templateHeader = JSON.parse(fixedJson);
                 console.log(`✅ Successfully parsed TEMPLATE_HEADER:`, templateHeader);
-            } catch (parseError) {
-                console.error(`❌ Still failed to parse TEMPLATE_HEADER after fixes:`, parseError.message);
-                console.error(`📋 Raw value length: ${process.env.TEMPLATE_HEADER.length}`);
-                console.error(`📋 First 100 chars: ${process.env.TEMPLATE_HEADER.substring(0, 100)}`);
 
-                // Log the exact error position
-                try {
-                    JSON.parse(process.env.TEMPLATE_HEADER);
-                } catch (detailedError) {
-                    console.error(`📍 JSON parse error at position: ${detailedError.message.match(/position (\d+)/)?.[1] || 'unknown'}`);
+                // Ensure we have valid structure
+                if (typeof templateHeader.show_header !== 'boolean') {
+                    console.warn(`⚠️ Invalid show_header value: ${templateHeader.show_header}. Defaulting to true.`);
+                    templateHeader.show_header = true;
                 }
 
-                // Use default values and continue
+                if (!templateHeader.margins || typeof templateHeader.margins !== 'object') {
+                    console.warn(`⚠️ Invalid margins structure. Using defaults.`);
+                    templateHeader.margins = { heightCm: 5, topMarginCm: 0, leftMarginCm: 0, rightMarginCm: 0 };
+                }
+
+            } catch (parseError) {
+                console.error(`❌ Failed to parse TEMPLATE_HEADER:`, parseError.message);
+                // Use default values
                 templateHeader = {
                     show_header: true,
                     margins: { heightCm: 5, topMarginCm: 0, leftMarginCm: 0, rightMarginCm: 0 }
                 };
-
-                // Update job history with detailed error info
-                if (jobId && schoolId) {
-                    await updateJobHistory(jobId, schoolId, {
-                        status: false,
-                        notes: `Invalid TEMPLATE_HEADER JSON format. Raw: ${process.env.TEMPLATE_HEADER.substring(0, 200)}. Using defaults.`
-                    });
-                }
             }
         }
 
-        const applyOverlay = templateHeader.show_header === false; // Apply overlay if show_header is false
-        const overlayOptions = templateHeader.margins || {
-            heightCm: 5,
-            topMarginCm: 0,
-            leftMarginCm: 0,
-            rightMarginCm: 0
+        // --- EXPLICIT LOGIC: Apply white overlay when show_header is false ---
+        const applyOverlay = !templateHeader.show_header; // More explicit: invert the boolean
+        const overlayOptions = {
+            heightCm: templateHeader.margins.heightCm || 5,
+            topMarginCm: templateHeader.margins.topMarginCm || 0,
+            leftMarginCm: templateHeader.margins.leftMarginCm || 0,
+            rightMarginCm: templateHeader.margins.rightMarginCm || 0
         };
-        console.log(`White overlay will be applied: ${applyOverlay}`);
-        console.log(`Overlay options:`, overlayOptions);
+
+        console.log(`🎯 Template header configuration:`);
+        console.log(`   - show_header: ${templateHeader.show_header}`);
+        console.log(`   - applyOverlay: ${applyOverlay}`);
+        console.log(`   - overlay options:`, overlayOptions);
 
         if (!templateUrl || !schoolId || !batchId || !jobId || !courseId || !groupIds) {
             throw new Error('❌ Missing required environment variables from GitHub Actions inputs.');
