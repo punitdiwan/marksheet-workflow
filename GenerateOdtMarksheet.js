@@ -476,9 +476,26 @@ async function GenerateOdtFile() {
         const templateUrl = process.env.TEMPLATE_URL;
         const groupIds = groupid?.split(",");
         const studentIdsInput = process.env.STUDENT_IDS;
-        const templateHeader = process.env.TEMPLATE_HEADER ? JSON.parse(process.env.TEMPLATE_HEADER) : {};
+        let templateHeader = {};
 
-        // --- NEW: Set applyOverlay and overlayOptions from TEMPLATE_HEADER ---
+        // --- NEW: Safely parse TEMPLATE_HEADER ---
+        try {
+            if (process.env.TEMPLATE_HEADER) {
+                templateHeader = JSON.parse(process.env.TEMPLATE_HEADER);
+            }
+        } catch (parseError) {
+            console.error(`⚠️ Failed to parse TEMPLATE_HEADER: ${process.env.TEMPLATE_HEADER}`, parseError);
+            console.warn(`Using default templateHeader configuration.`);
+            templateHeader = {
+                show_header: true,
+                margins: { heightCm: 5, topMarginCm: 0, leftMarginCm: 0, rightMarginCm: 0 }
+            };
+            await updateJobHistory(jobId, schoolId, {
+                status: false,
+                notes: `Invalid TEMPLATE_HEADER format: ${process.env.TEMPLATE_HEADER}. Using default configuration.`
+            });
+        }
+
         const applyOverlay = templateHeader.show_header === false; // Apply overlay if show_header is false
         const overlayOptions = templateHeader.margins || {
             heightCm: 5,
@@ -626,7 +643,7 @@ async function GenerateOdtFile() {
             const originalPdfPath = await convertOdtToPdf(odtFilename, outputDir);
             let finalPdfPath = originalPdfPath; // Default to the original PDF
 
-            // ---: Conditionally apply the overlay ---
+            // ---: Conditionally apply the overlay
             if (applyOverlay) {
                 const modifiedPdfPath = path.join(outputDir, `${fileSafeName}_modified.pdf`);
                 await addWhiteOverlay(originalPdfPath, modifiedPdfPath, overlayOptions);
