@@ -476,11 +476,18 @@ async function GenerateOdtFile() {
         const templateUrl = process.env.TEMPLATE_URL;
         const groupIds = groupid?.split(",");
         const studentIdsInput = process.env.STUDENT_IDS;
+        const templateHeader = process.env.TEMPLATE_HEADER ? JSON.parse(process.env.TEMPLATE_HEADER) : {};
 
-        // --- NEW: Check environment variable to decide if overlay should be applied ---
-        // const applyOverlay = process.env.APPLY_WHITE_OVERLAY === 'true';
-        const applyOverlay = "false" === 'true'; // Force overlay to always be applied
+        // --- NEW: Set applyOverlay and overlayOptions from TEMPLATE_HEADER ---
+        const applyOverlay = templateHeader.show_header === false; // Apply overlay if show_header is false
+        const overlayOptions = templateHeader.margins || {
+            heightCm: 5,
+            topMarginCm: 0,
+            leftMarginCm: 0,
+            rightMarginCm: 0
+        };
         console.log(`White overlay will be applied: ${applyOverlay}`);
+        console.log(`Overlay options:`, overlayOptions);
 
         if (!templateUrl || !schoolId || !batchId || !jobId || !courseId || !groupIds) {
             throw new Error('❌ Missing required environment variables from GitHub Actions inputs.');
@@ -588,15 +595,6 @@ async function GenerateOdtFile() {
         console.log(`✅ Template saved locally to: ${templatePath}`);
 
         // STEP 4: Render ODT & convert to PDF
-        // --- START: CONFIGURATION FOR THE WHITE OVERLAY ---
-        // Change these values to control the size and position of the white box.
-        // All units are in centimeters. This will only be used if APPLY_WHITE_OVERLAY is 'true'.
-        const overlayOptions = {
-            heightCm: 4.3,       // Height of the overlay itself.
-            topMarginCm: 0.2,      // Space from the top of the page before the overlay starts.
-            leftMarginCm: 0.2,   // Space to leave on the left side (from the page edge).
-            rightMarginCm: 0.2,  // Space to leave on the right side (from the page edge).
-        };
 
         for (let i = 0; i < students.length; i++) {
             const student = students[i];

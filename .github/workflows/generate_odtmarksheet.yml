@@ -26,6 +26,9 @@ on:
       STUDENT_IDS:
         description: 'Comma-separated list of student IDs to process'
         required: false
+      TEMPLATE_HEADER:
+        description: 'Template header configuration (JSON string)'
+        required: false
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -52,6 +55,7 @@ jobs:
           JOB_ID="${{ github.event.inputs.JOB_ID }}"
           COURSE_ID="${{ github.event.inputs.COURSE_ID }}"
           STUDENT_IDS="${{ github.event.inputs.STUDENT_IDS }}"
+          TEMPLATE_HEADER="${{ github.event.inputs.TEMPLATE_HEADER }}"
 
           echo "SCHOOL_ID=$SCHOOL_ID" >> $GITHUB_ENV
           echo "BATCH_ID=$BATCH_ID" >> $GITHUB_ENV
@@ -62,6 +66,7 @@ jobs:
           echo "JOB_ID=$JOB_ID" >> $GITHUB_ENV
           echo "COURSE_ID=$COURSE_ID" >> $GITHUB_ENV
           echo "STUDENT_IDS=$STUDENT_IDS" >> $GITHUB_ENV
+          echo "TEMPLATE_HEADER=$TEMPLATE_HEADER" >> $GITHUB_ENV
 
       - name: Install dependencies
         run: |
