@@ -476,24 +476,55 @@ async function GenerateOdtFile() {
         const templateUrl = process.env.TEMPLATE_URL;
         const groupIds = groupid?.split(",");
         const studentIdsInput = process.env.STUDENT_IDS;
-        let templateHeader = {};
+        // --- IMPROVED: Safely parse TEMPLATE_HEADER with better error handling ---
+        let templateHeader = {
+            show_header: true,
+            margins: { heightCm: 5, topMarginCm: 0, leftMarginCm: 0, rightMarginCm: 0 }
+        };
 
-        // --- NEW: Safely parse TEMPLATE_HEADER ---
-        try {
-            if (process.env.TEMPLATE_HEADER) {
-                templateHeader = JSON.parse(process.env.TEMPLATE_HEADER);
+        if (process.env.TEMPLATE_HEADER) {
+            console.log(`🔍 Raw TEMPLATE_HEADER value: "${process.env.TEMPLATE_HEADER}"`);
+
+            // Try to fix common JSON formatting issues
+            let fixedJson = process.env.TEMPLATE_HEADER.trim();
+
+            // Add quotes around unquoted property names (basic fix)
+            fixedJson = fixedJson.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*):/g, '$1"$2":');
+
+            // Ensure boolean values have quotes removed if needed (they shouldn't, but just in case)
+            fixedJson = fixedJson.replace(/:true/g, ':"true"').replace(/:false/g, ':"false"');
+
+            console.log(`🔧 Fixed TEMPLATE_HEADER attempt: "${fixedJson}"`);
+
+            try {
+                templateHeader = JSON.parse(fixedJson);
+                console.log(`✅ Successfully parsed TEMPLATE_HEADER:`, templateHeader);
+            } catch (parseError) {
+                console.error(`❌ Still failed to parse TEMPLATE_HEADER after fixes:`, parseError.message);
+                console.error(`📋 Raw value length: ${process.env.TEMPLATE_HEADER.length}`);
+                console.error(`📋 First 100 chars: ${process.env.TEMPLATE_HEADER.substring(0, 100)}`);
+
+                // Log the exact error position
+                try {
+                    JSON.parse(process.env.TEMPLATE_HEADER);
+                } catch (detailedError) {
+                    console.error(`📍 JSON parse error at position: ${detailedError.message.match(/position (\d+)/)?.[1] || 'unknown'}`);
+                }
+
+                // Use default values and continue
+                templateHeader = {
+                    show_header: true,
+                    margins: { heightCm: 5, topMarginCm: 0, leftMarginCm: 0, rightMarginCm: 0 }
+                };
+
+                // Update job history with detailed error info
+                if (jobId && schoolId) {
+                    await updateJobHistory(jobId, schoolId, {
+                        status: false,
+                        notes: `Invalid TEMPLATE_HEADER JSON format. Raw: ${process.env.TEMPLATE_HEADER.substring(0, 200)}. Using defaults.`
+                    });
+                }
             }
-        } catch (parseError) {
-            console.error(`⚠️ Failed to parse TEMPLATE_HEADER: ${process.env.TEMPLATE_HEADER}`, parseError);
-            console.warn(`Using default templateHeader configuration.`);
-            templateHeader = {
-                show_header: true,
-                margins: { heightCm: 5, topMarginCm: 0, leftMarginCm: 0, rightMarginCm: 0 }
-            };
-            await updateJobHistory(jobId, schoolId, {
-                status: false,
-                notes: `Invalid TEMPLATE_HEADER format: ${process.env.TEMPLATE_HEADER}. Using default configuration.`
-            });
         }
 
         const applyOverlay = templateHeader.show_header === false; // Apply overlay if show_header is false
