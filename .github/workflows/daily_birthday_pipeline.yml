@@ -18,10 +18,13 @@ jobs:
 
       # 2️⃣ Clone the python-birthday-reminder repo
       - name: Clone birthday reminder repo
+        env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git clone https://github.com/punitdiwan/python-birthday-reminder.git
+          git clone https://x-access-token:${GITHUB_TOKEN}@github.com/punitdiwan/python-birthday-reminder.git
           cd python-birthday-reminder
           echo "✅ Cloned python-birthday-reminder repository"
+
 
       # 3️⃣ Install system dependencies
       - name: Install system dependencies
