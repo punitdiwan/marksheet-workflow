@@ -5,7 +5,7 @@ on:
     branches: [main]
   schedule:
     # Every day at 16:16 PM IST (10:46 UTC)
-    - cron: "46 10 * * *"
+    - cron: "50 10 * * *"
 
 jobs:
   birthday-pipeline:
