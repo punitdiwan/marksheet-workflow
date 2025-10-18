@@ -19,7 +19,7 @@ jobs:
       # 2️⃣ Clone the python-birthday-reminder repo
       - name: Clone birthday reminder repo
         run: |
-          git clone https://github.com/YOUR_USERNAME/python-birthday-reminder.git
+          git clone https://github.com/punitdiwan/python-birthday-reminder.git
           cd python-birthday-reminder
           echo "✅ Cloned python-birthday-reminder repository"
 
