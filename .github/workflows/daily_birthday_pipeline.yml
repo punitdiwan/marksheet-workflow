@@ -4,71 +4,84 @@ on:
   workflow_dispatch:
     branches: [main]
   schedule:
-    - cron: "0 10 * * *"
+    # Every day at 16:16 PM IST (10:46 UTC)
+    - cron: "46 10 * * *"
 
 jobs:
   birthday-pipeline:
-    name: Generate and Post Birthday Posters for All Schools
+    name: Generate & Post Birthday Posters for All Schools
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repository
-      - name: Checkout repository
+      # 1️⃣ Checkout this repo (where the workflow lives)
+      - name: Checkout current repo
         uses: actions/checkout@v4
 
-      # 2️⃣ Install system dependencies
+      # 2️⃣ Clone the python-birthday-reminder repo
+      - name: Clone birthday reminder repo
+        run: |
+          git clone https://github.com/YOUR_USERNAME/python-birthday-reminder.git
+          cd python-birthday-reminder
+          echo "✅ Cloned python-birthday-reminder repository"
+
+      # 3️⃣ Install system dependencies
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y tesseract-ocr libtesseract-dev libleptonica-dev
+          sudo apt-get install -y tesseract-ocr libtesseract-dev libleptonica-dev jq curl
 
-      # 3️⃣ Set up Python
+      # 4️⃣ Set up Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # 4️⃣ Install Python dependencies
-      - name: Install dependencies
+      # 5️⃣ Install Python dependencies
+      - name: Install Python dependencies
         run: |
+          cd python-birthday-reminder
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 5️⃣ Fetch active school projects from Supabase REST API
+      # 6️⃣ Get project list from Supabase REST API
       - name: Get Project List
         run: |
           echo "Fetching active school projects..."
           curl -s "https://studio.maitretech.com/rest/v1/projects?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE&is_trial=eq.false&is_disabled=eq.false&order=created_at.desc" \
             | jq -r '.[] | .prj_name' > project.txt
-          echo "✅ Project list created:"
+          echo "✅ Created project.txt"
           cat project.txt
 
-      # 6️⃣ Loop through each school and run birthday pipeline
-      - name: Run Birthday Poster Generator for all schools
+      # 7️⃣ Run the birthday poster generator for all schools
+      - name: Run Birthday Poster Generator
         env:
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_PORT: ${{ secrets.DB_PORT }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
-          echo "🎓 Starting Birthday Poster pipeline for all schools..."
+          cd python-birthday-reminder
+
+          export DB_HOST="studio.maitretech.com"
+          export DB_PORT="5432"
+          export DB_NAME="postgres"
+          export DB_USER="postgres"
+
+          echo "🎂 Starting birthday pipeline for all schools..."
+          mkdir -p outputs
+
           while IFS= read -r SCHOOL_ID; do
-            if [ -z "$SCHOOL_ID" ]; then
-              continue
-            fi
+            if [ -z "$SCHOOL_ID" ]; then continue; fi
             echo "--------------------------------------------------"
-            echo "🏫 Processing School: $SCHOOL_ID"
+            echo "🏫 Processing school: $SCHOOL_ID"
             echo "--------------------------------------------------"
             export SCHOOL_ID="$SCHOOL_ID"
             python main.py --run_birthday_pipeline || echo "❌ Failed for $SCHOOL_ID"
-          done < project.txt
+            echo ""
+          done < ../project.txt
 
-      # 7️⃣ (Optional) Upload logs for debugging
-      - name: Upload Logs
+      # 8️⃣ Upload outputs as artifact (optional)
+      - name: Upload Outputs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: birthday-pipeline-logs
-          path: outputs/
+          name: birthday-posts
+          path: python-birthday-reminder/outputs/
