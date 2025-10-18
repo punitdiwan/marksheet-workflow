@@ -4,8 +4,7 @@ on:
   workflow_dispatch:
     branches: [main]
   schedule:
-    # Every day at 16:16 PM IST (10:46 UTC)
-    - cron: "50 10 * * *"
+    - cron: "55 10 * * *"
 
 jobs:
   birthday-pipeline:
