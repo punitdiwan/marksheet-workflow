@@ -397,7 +397,8 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     }
 
     // Re-zip to create new ODT
-    const newOdtPath = path.join(tempDir, `${student.full_name?.replace(/\s+/g, '_') || student.student_id}.odt`);
+    const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id;
+    const newOdtPath = path.join(tempDir, `${safeName}.odt`);
     const zip = new yazl.ZipFile();
     const walkDir = async (dir, zipPath = '') => {
         const files = await fs.readdir(dir);
