@@ -4,6 +4,19 @@ const { exec } = require('child_process');
 const util = require('util');
 const fetch = require('node-fetch');
 const carbone = require('carbone');
+
+// --- NEW: ADD CUSTOM FORMATTER ---
+carbone.formatters.showWithLabel = function (value, label) {
+    // If value is empty, return nothing (an empty string).
+    if (value === null || value === undefined || value === '') {
+        return '';
+    }
+    // If value exists, return the label followed by the value.
+    return label + ' ' + value;
+};
+// --- END OF NEW FORMATTER ---
+
+
 const FormData = require('form-data');
 const yauzl = require('yauzl');
 const yazl = require('yazl');
@@ -610,7 +623,7 @@ async function GenerateOdtFile() {
 
         // STEP 2: Call config + transformation API
         console.log("📡 Fetching marksheet config + transformed data from API...");
-        const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
+        const apiRes = await fetch('https://demoschool-git-mkoct28tempheader-punit-diwans-projects.vercel.app/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -654,6 +667,51 @@ async function GenerateOdtFile() {
                 ...transformedData,
                 school: schoolDetails
             };
+
+            // --- NEW: DYNAMIC SLOTS LOGIC ---
+            const dynamicDetailsConfig = process.env.DYNAMIC_DETAILS_CONFIG;
+            const details = {};
+
+            // Pre-fill a generous number of slots to prevent template errors
+            // if the config has fewer items than the template expects.
+            for (let i = 1; i <= 25; i++) {
+                details[`label${i}`] = '';
+                details[`value${i}`] = '';
+            }
+
+
+            if (dynamicDetailsConfig) {
+                console.log('🔄 Found DYNAMIC_DETAILS_CONFIG, processing dynamic slots...');
+                try {
+                    // --- FIX ---
+                    // This regex finds unquoted keys/labels (like `label:`) and values
+                    // and adds the necessary double quotes to make it valid JSON.
+                    const validJsonString = dynamicDetailsConfig
+                        .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":') // Add quotes to keys (e.g., key: -> "key":)
+                        .replace(/:\s*([^",}\]]+)/g, ':"$1"');   // Add quotes to unquoted values
+
+                    console.log(`🔧 Fixed DYNAMIC_DETAILS_CONFIG for parsing: ${validJsonString}`);
+
+                    const config = JSON.parse(validJsonString);
+
+                    // Loop through the configuration array
+                    config.forEach((item, index) => {
+                        const slotNumber = index + 1;
+                        if (item.label && item.key) {
+                            // Assign the label directly from the config
+                            details[`label${slotNumber}`] = item.label;
+                            // Get the value from transformedData using the key from the config
+                            details[`value${slotNumber}`] = transformedData[item.key] || '';
+                        }
+                    });
+
+                } catch (e) {
+                    console.warn(`⚠️ Could not parse DYNAMIC_DETAILS_CONFIG. It might be invalid JSON. Error: ${e.message}`);
+                }
+            }
+
+            // Add the generated 'details' object to the main payload
+            dataForCarbone.details = details;
 
             if (i === 0) {
                 console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
