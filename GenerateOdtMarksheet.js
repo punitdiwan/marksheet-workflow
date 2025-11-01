@@ -669,7 +669,7 @@ async function GenerateOdtFile() {
             };
 
             // --- NEW: DYNAMIC SLOTS LOGIC ---
-            const dynamicDetailsConfig = process.env.DYNAMIC_DETAILS_CONFIG;
+            const dynamicDetailsConfig = process.env.STUDENT_DETAILS_CONFIG;
             const details = {};
 
             // Pre-fill a generous number of slots to prevent template errors
@@ -681,7 +681,7 @@ async function GenerateOdtFile() {
 
 
             if (dynamicDetailsConfig) {
-                console.log('🔄 Found DYNAMIC_DETAILS_CONFIG, processing dynamic slots...');
+                console.log('🔄 Found STUDENT_DETAILS_CONFIG, processing dynamic slots...');
                 try {
                     // --- FIX ---
                     // This regex finds unquoted keys/labels (like `label:`) and values
@@ -690,7 +690,7 @@ async function GenerateOdtFile() {
                         .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":') // Add quotes to keys (e.g., key: -> "key":)
                         .replace(/:\s*([^",}\]]+)/g, ':"$1"');   // Add quotes to unquoted values
 
-                    console.log(`🔧 Fixed DYNAMIC_DETAILS_CONFIG for parsing: ${validJsonString}`);
+                    console.log(`🔧 Fixed STUDENT_DETAILS_CONFIG for parsing: ${validJsonString}`);
 
                     const config = JSON.parse(validJsonString);
 
@@ -706,7 +706,7 @@ async function GenerateOdtFile() {
                     });
 
                 } catch (e) {
-                    console.warn(`⚠️ Could not parse DYNAMIC_DETAILS_CONFIG. It might be invalid JSON. Error: ${e.message}`);
+                    console.warn(`⚠️ Could not parse STUDENT_DETAILS_CONFIG. It might be invalid JSON. Error: ${e.message}`);
                 }
             }
 

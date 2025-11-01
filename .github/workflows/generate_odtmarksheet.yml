@@ -29,6 +29,9 @@ on:
       TEMPLATE_HEADER:
         description: 'Template header configuration (JSON string)'
         required: false
+      STUDENT_DETAILS_CONFIG:
+        description: 'Student details configuration (JSON string)'
+        required: false
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -56,6 +59,7 @@ jobs:
           COURSE_ID="${{ github.event.inputs.COURSE_ID }}"
           STUDENT_IDS="${{ github.event.inputs.STUDENT_IDS }}"
           TEMPLATE_HEADER="${{ github.event.inputs.TEMPLATE_HEADER }}"
+          STUDENT_DETAILS_CONFIG="${{ github.event.inputs.STUDENT_DETAILS_CONFIG }}"
 
           echo "SCHOOL_ID=$SCHOOL_ID" >> $GITHUB_ENV
           echo "BATCH_ID=$BATCH_ID" >> $GITHUB_ENV
