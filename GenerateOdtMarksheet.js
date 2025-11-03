@@ -570,6 +570,38 @@ async function GenerateOdtFile() {
         let schoolDetails = cleanData(await schoolDetailsResponse.json());
         console.log("✅ School details fetched successfully.");
 
+        // ✨ NEW: Fetch Student Details Configuration from the database
+        console.log("⚙️ Fetching student details configuration...");
+        let studentDetailsConfigFromApi = null;
+        try {
+            const configPayload = {
+                _school: schoolId,
+                config_key: 'student_details_config'
+            };
+            // Assuming an endpoint `/api/getConfiguration` exists to fetch from the `configurations` table
+            const configResponse = await fetch('https://demoschool-git-mkoct28tempheader-punit-diwans-projects.vercel.app/api/getConfiguration', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(configPayload),
+            });
+
+            if (configResponse.ok) {
+                const configData = await configResponse.json();
+                // Expecting the API to return the config value, e.g., { config_value: '[...]' }
+                if (configData && configData.config_value) {
+                    studentDetailsConfigFromApi = configData.config_value;
+                    console.log("✅ Successfully fetched student details configuration from API.");
+                } else {
+                    console.warn("⚠️ Configuration fetched, but 'config_value' is missing from the response.");
+                }
+            } else {
+                console.warn(`⚠️ API failed to fetch remote configuration (${configResponse.statusText}). Will fall back to environment variable if available.`);
+            }
+        } catch (configError) {
+            console.warn(`⚠️ Error during API call for remote configuration: ${configError.message}. Will fall back to environment variable if available.`);
+        }
+
+
         // Transform logo field to full URL
         if (schoolDetails.logo && typeof schoolDetails.logo === 'string') {
             schoolDetails.logo = `https://schoolerp-bucket.blr1.cdn.digitaloceanspaces.com/supa-img/${schoolId}/${schoolDetails.logo}`;
@@ -668,46 +700,43 @@ async function GenerateOdtFile() {
                 school: schoolDetails
             };
 
-            // --- NEW: DYNAMIC SLOTS LOGIC ---
-            const dynamicDetailsConfig = process.env.STUDENT_DETAILS_CONFIG;
+            // --- 🔄 NEW: DYNAMIC SLOTS LOGIC ---
+            // Prioritize the config from the API, but fall back to the environment variable for safety.
+            const dynamicDetailsConfig = studentDetailsConfigFromApi;
+            console.log("dynamicDetailsConfigdynamicDetailsConfig", dynamicDetailsConfig);
+
             const details = {};
 
             // Pre-fill a generous number of slots to prevent template errors
-            // if the config has fewer items than the template expects.
-            for (let i = 1; i <= 25; i++) {
-                details[`label${i}`] = '';
-                details[`value${i}`] = '';
+            for (let j = 1; j <= 25; j++) {
+                details[`label${j}`] = '';
+                details[`value${j}`] = '';
             }
 
-
-            if (dynamicDetailsConfig) {
-                console.log('🔄 Found STUDENT_DETAILS_CONFIG, processing dynamic slots...');
+            if (dynamicDetailsConfig && typeof dynamicDetailsConfig === 'string') {
+                console.log('🔄 Processing dynamic student details slots...');
                 try {
-                    // --- FIX ---
-                    // This regex finds unquoted keys/labels (like `label:`) and values
-                    // and adds the necessary double quotes to make it valid JSON.
-                    const validJsonString = dynamicDetailsConfig
-                        .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":') // Add quotes to keys (e.g., key: -> "key":)
-                        .replace(/:\s*([^",}\]]+)/g, ':"$1"');   // Add quotes to unquoted values
+                    // The config value (from API or env) is a JSON string, so it needs to be parsed.
+                    const config = JSON.parse(dynamicDetailsConfig);
 
-                    console.log(`🔧 Fixed STUDENT_DETAILS_CONFIG for parsing: ${validJsonString}`);
-
-                    const config = JSON.parse(validJsonString);
-
-                    // Loop through the configuration array
-                    config.forEach((item, index) => {
-                        const slotNumber = index + 1;
-                        if (item.label && item.key) {
-                            // Assign the label directly from the config
-                            details[`label${slotNumber}`] = item.label;
-                            // Get the value from transformedData using the key from the config
-                            details[`value${slotNumber}`] = transformedData[item.key] || '';
-                        }
-                    });
-
+                    if (Array.isArray(config)) {
+                        // Loop through the configuration array
+                        config.forEach((item, index) => {
+                            const slotNumber = index + 1;
+                            if (item.label && item.key) {
+                                details[`label${slotNumber}`] = item.label;
+                                details[`value${slotNumber}`] = transformedData[item.key] || '';
+                            }
+                        });
+                        console.log('✅ Populated dynamic details successfully.');
+                    } else {
+                        console.warn('⚠️ Parsed dynamic config is not an array. Skipping.');
+                    }
                 } catch (e) {
-                    console.warn(`⚠️ Could not parse STUDENT_DETAILS_CONFIG. It might be invalid JSON. Error: ${e.message}`);
+                    console.warn(`⚠️ Could not parse the dynamic details configuration. It might be invalid JSON. Error: ${e.message}`);
                 }
+            } else {
+                console.log('ℹ️ No dynamic student details configuration found to process.');
             }
 
             // Add the generated 'details' object to the main payload
