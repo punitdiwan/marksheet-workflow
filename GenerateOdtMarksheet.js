@@ -568,7 +568,7 @@ async function GenerateOdtFile() {
             throw new Error(`Failed to fetch school details: ${await schoolDetailsResponse.text()}`);
         }
         let schoolDetails = cleanData(await schoolDetailsResponse.json());
-        console.log("✅ School details fetched successfully.");
+        console.log("✅ School details fetched successfully.",schoolDetails);
 
         // ✨ NEW: Fetch Student Details Configuration from the database
         console.log("⚙️ Fetching student details configuration...");
