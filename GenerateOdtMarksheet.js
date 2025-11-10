@@ -244,26 +244,19 @@ async function findImageFilename(contentXmlPath, picturesDir, frameName) {
 
         const textContent = parsedXml['office:document-content']?.['office:body']?.['office:text'] || {};
         const drawFrames = findFrames(textContent);
-        console.log(`DEBUG: Found ${drawFrames.length} draw:frame elements`);
-
-        drawFrames.forEach((frame, index) => {
-            const name = frame['draw:name'] || 'undefined';
-            const image = frame['draw:image'];
-            const href = image?.['xlink:href'] || 'undefined';
-            console.log(`DEBUG: Frame ${index + 1} - draw:name="${name}", xlink:href="${href}"`);
-        });
+        // console.log(`DEBUG: Found ${drawFrames.length} draw:frame elements`);
 
         for (const frame of drawFrames) {
             if (frame['draw:name'] === frameName && frame['draw:image']) {
                 const image = frame['draw:image'];
                 const href = image['xlink:href'];
-                console.log(`DEBUG: Found draw:image with draw:name="${frameName}", href=${href}`);
+                // console.log(`DEBUG: Found draw:image with draw:name="${frameName}", href=${href}`);
                 if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
                     const filename = href.replace('Pictures/', '');
                     const filePath = path.join(picturesDir, filename);
                     try {
                         await fs.access(filePath);
-                        console.log(`DEBUG: Confirmed image file exists: ${filePath}`);
+                        // console.log(`DEBUG: Confirmed image file exists: ${filePath}`);
                         return filename;
                     } catch (err) {
                         console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory:`, err.message);
@@ -272,7 +265,7 @@ async function findImageFilename(contentXmlPath, picturesDir, frameName) {
             }
         }
 
-        console.warn(`⚠️ No image with draw:name="${frameName}" found in content.xml.`);
+        // console.warn(`⚠️ No image with draw:name="${frameName}" found in content.xml.`);
         return null;
     } catch (err) {
         console.error(`❌ Failed to parse content.xml or read Pictures directory for ${frameName}:`, err);
@@ -315,89 +308,76 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         console.log(`✅ Unzipped template for ${student.full_name} to ${studentDir}`);
     } catch (err) {
         console.error(`❌ Failed to unzip template for ${student.full_name}:`, err);
-        return templatePath;
+        return templatePath; // Return original if unzip fails
     }
 
     const contentXmlPath = path.join(studentDir, 'content.xml');
     const picturesDir = path.join(studentDir, 'Pictures');
-    let pictureFiles = [];
+    await fs.mkdir(picturesDir, { recursive: true }); // Ensure Pictures directory exists
 
-    try {
-        pictureFiles = await fs.readdir(picturesDir);
-        console.log(`DEBUG: Pictures directory contents: ${pictureFiles.join(', ')}`);
-    } catch (err) {
-        console.warn(`⚠️ Pictures directory not found or empty:`, err.message);
-        pictureFiles = [];
+    // --- NEW: UNIFIED AND NAME-BASED IMAGE REPLACEMENT LOGIC ---
+
+    // Define the images we want to replace by their frame name in the ODT
+    // and where to find their new URL in our data.
+    const imageReplacements = [
+        {
+            frameName: 'Logo',
+            url: schoolDetails.logo,
+            description: 'School Logo'
+        },
+        {
+            frameName: 'studentImage',
+            url: student.photo,
+            description: 'Student Photo'
+        },
+        {
+            frameName: 'principalSignature',
+            url: schoolDetails.signatures?.principalSignature,
+            description: 'Principal Signature'
+        },
+        {
+            frameName: 'inchargeSignature',
+            url: schoolDetails.signatures?.inchargeSignature,
+            description: 'In-charge Signature'
+        }
+    ];
+
+    let anyImageReplaced = false;
+
+    // Process each potential image replacement
+     for (const replacement of imageReplacements) {
+        const { frameName, url, description } = replacement;
+
+        if (!url || !String(url).startsWith("http")) {
+            // console.log(`ℹ️ Skipping ${description} (${frameName}): No valid URL provided.`);
+            continue;
+        }
+
+        const targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName);
+        if (!targetFilename) {
+            // console.log(`ℹ️ Skipping ${description} (${frameName}): Frame not found in the template.`);
+            continue;
+        }
+        
+        console.log(`➡️  Mapping frame "${frameName}" to file "${targetFilename}" for replacement.`);
+
+        const imageBuffer = await fetchImage(url);
+        if (!imageBuffer) {
+            console.warn(`⚠️ Failed to fetch image for ${description} from ${url}. Skipping replacement.`);
+            continue;
+        }
+
+        try {
+            const imagePath = path.join(picturesDir, targetFilename);
+            await fs.writeFile(imagePath, imageBuffer);
+            console.log(`✅ Replaced ${description} (${frameName})`);
+            anyImageReplaced = true;
+        } catch (writeError) {
+            console.error(`❌ Failed to write new image for ${description} to ${targetFilename}:`, writeError);
+        }
     }
 
-    if (pictureFiles.length === 1) {
-        if (!schoolDetails.logo || !schoolDetails.logo.startsWith("http")) {
-            console.warn(`⚠️ No valid school logo URL in schoolDetails: ${schoolDetails.logo || 'undefined'}. Using original template.`);
-            return templatePath;
-        }
-
-        const schoolLogoBuffer = await fetchImage(schoolDetails.logo);
-        if (!schoolLogoBuffer) {
-            console.warn(`⚠️ Failed to fetch school logo from ${schoolDetails.logo}. Using original template.`);
-            return templatePath;
-        }
-
-        const schoolLogoFilename = pictureFiles[0];
-        const schoolLogoPath = path.join(picturesDir, schoolLogoFilename);
-        await fs.writeFile(schoolLogoPath, schoolLogoBuffer);
-        console.log(`✅ Replaced school logo at ${schoolLogoPath} (single file case)`);
-
-        // Format content.xml with xmllint
-        try {
-            await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
-            console.log(`✅ Formatted content.xml for ${student.full_name}`);
-        } catch (err) {
-            console.warn(`⚠️ xmllint formatting failed: ${err.message}. Using unformatted content.xml.`);
-        }
-    } else if (pictureFiles.length === 2) {
-        let studentImageFilename = null;
-        if (student.photo && student.photo !== "-" && student.photo.startsWith("http")) {
-            const studentImageBuffer = await fetchImage(student.photo);
-            if (studentImageBuffer) {
-                studentImageFilename = await findImageFilename(contentXmlPath, picturesDir, 'studentImage');
-                if (studentImageFilename) {
-                    const studentImagePath = path.join(picturesDir, studentImageFilename);
-                    await fs.writeFile(studentImagePath, studentImageBuffer);
-                    console.log(`✅ Wrote student image to ${studentImagePath}`);
-
-                    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-                    contentXml = contentXml.replace(
-                        new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="studentImage")`, 'i'),
-                        `Pictures/${studentImageFilename}`
-                    );
-                    await fs.writeFile(contentXmlPath, contentXml);
-                    console.log(`✅ Updated content.xml for student image for ${student.full_name}`);
-                }
-            }
-        }
-
-        let schoolLogoFilename = null;
-        if (schoolDetails.logo && schoolDetails.logo.startsWith("http")) {
-            const schoolLogoBuffer = await fetchImage(schoolDetails.logo);
-            if (schoolLogoBuffer) {
-                schoolLogoFilename = await findImageFilename(contentXmlPath, picturesDir, 'Logo');
-                if (schoolLogoFilename) {
-                    const schoolLogoPath = path.join(picturesDir, schoolLogoFilename);
-                    await fs.writeFile(schoolLogoPath, schoolLogoBuffer);
-                    console.log(`✅ Wrote school logo to ${schoolLogoPath}`);
-
-                    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-                    contentXml = contentXml.replace(
-                        new RegExp(`Pictures/[^"]+\\.(png|jpg|jpeg)(?="[^>]*draw:name="Logo")`, 'i'),
-                        `Pictures/${schoolLogoFilename}`
-                    );
-                    await fs.writeFile(contentXmlPath, contentXml);
-                    console.log(`✅ Updated content.xml for school logo for ${student.full_name}`);
-                }
-            }
-        }
-
-        // Format content.xml with xmllint
+    if (anyImageReplaced) {
         try {
             await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
             console.log(`✅ Formatted content.xml for ${student.full_name}`);
@@ -405,9 +385,10 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             console.warn(`⚠️ xmllint formatting failed: ${err.message}. Using unformatted content.xml.`);
         }
     } else {
-        console.warn(`⚠️ Unexpected number of files in Pictures directory (${pictureFiles.length}). Using original template.`);
-        return templatePath;
+        console.log(`ℹ️ No images were replaced for ${student.full_name}.`);
     }
+
+    // --- END OF NEW LOGIC ---
 
     // Re-zip to create new ODT
     const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id;
@@ -498,33 +479,29 @@ async function GenerateOdtFile() {
 
         if (process.env.TEMPLATE_HEADER) {
             console.log(`🔍 Raw TEMPLATE_HEADER value: "${process.env.TEMPLATE_HEADER}"`);
-
-            // Try to fix common JSON formatting issues
-            let fixedJson = process.env.TEMPLATE_HEADER.trim();
-
-            // Add quotes around unquoted property names (basic fix)
-            fixedJson = fixedJson.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*):/g, '$1"$2":');
-
+         
+            let fixedJson = process.env.TEMPLATE_HEADER.trim().replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*):/g, '$1"$2":');
+         
             console.log(`🔧 Fixed TEMPLATE_HEADER attempt: "${fixedJson}"`);
 
             try {
                 templateHeader = JSON.parse(fixedJson);
                 console.log(`✅ Successfully parsed TEMPLATE_HEADER:`, templateHeader);
-
+            
                 // Ensure we have valid structure
                 if (typeof templateHeader.show_header !== 'boolean') {
-                    console.warn(`⚠️ Invalid show_header value: ${templateHeader.show_header}. Defaulting to true.`);
+                    console.warn(`⚠️ Invalid show_header value. Defaulting to true.`);
                     templateHeader.show_header = true;
                 }
-
+               
                 if (!templateHeader.margins || typeof templateHeader.margins !== 'object') {
                     console.warn(`⚠️ Invalid margins structure. Using defaults.`);
                     templateHeader.margins = { heightCm: 5, topMarginCm: 0, leftMarginCm: 0, rightMarginCm: 0 };
                 }
-
+          
             } catch (parseError) {
                 console.error(`❌ Failed to parse TEMPLATE_HEADER:`, parseError.message);
-                // Use default values
+               
                 templateHeader = {
                     show_header: true,
                     margins: { heightCm: 5, topMarginCm: 0, leftMarginCm: 0, rightMarginCm: 0 }
@@ -532,8 +509,7 @@ async function GenerateOdtFile() {
             }
         }
 
-        // --- EXPLICIT LOGIC: Apply white overlay when show_header is false ---
-        const applyOverlay = !templateHeader.show_header; // More explicit: invert the boolean
+        const applyOverlay = !templateHeader.show_header;
         const overlayOptions = {
             heightCm: templateHeader.margins.heightCm || 5,
             topMarginCm: templateHeader.margins.topMarginCm || 0,
@@ -541,13 +517,10 @@ async function GenerateOdtFile() {
             rightMarginCm: templateHeader.margins.rightMarginCm || 0
         };
 
-        console.log(`🎯 Template header configuration:`);
-        console.log(`   - show_header: ${templateHeader.show_header}`);
-        console.log(`   - applyOverlay: ${applyOverlay}`);
-        console.log(`   - overlay options:`, overlayOptions);
+        console.log(`🎯 Template header config: show_header=${templateHeader.show_header}, applyOverlay=${applyOverlay}`);
 
         if (!templateUrl || !schoolId || !batchId || !jobId || !courseId || !groupIds) {
-            throw new Error('❌ Missing required environment variables from GitHub Actions inputs.');
+            throw new Error('❌ Missing required environment variables.');
         }
 
         outputDir = path.join(process.cwd(), 'output');
@@ -564,21 +537,31 @@ async function GenerateOdtFile() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(schoolDetailsPayload),
         });
-        if (!schoolDetailsResponse.ok) {
-            throw new Error(`Failed to fetch school details: ${await schoolDetailsResponse.text()}`);
-        }
+        if (!schoolDetailsResponse.ok) throw new Error(`Failed to fetch school details: ${await schoolDetailsResponse.text()}`);
         let schoolDetails = cleanData(await schoolDetailsResponse.json());
-        console.log("✅ School details fetched successfully.",schoolDetails);
 
-        // ✨ NEW: Fetch Student Details Configuration from the database
+        // ✨ NEW: Parse signature config from schoolDetails
+        let signatureConfig = {};
+        if (schoolDetails.config && typeof schoolDetails.config === 'string') {
+            try {
+                signatureConfig = JSON.parse(schoolDetails.config);
+                console.log("✅ Parsed signature config from school details.");
+            } catch (e) {
+                console.warn("⚠️ Could not parse schoolDetails.config JSON for signatures:", e.message);
+            }
+        }
+        schoolDetails.signatures = signatureConfig; // Attach for easy access
+
+        console.log("✅ School details fetched successfully.");
+
         console.log("⚙️ Fetching student details configuration...");
         let studentDetailsConfigFromApi = null;
         try {
-            const configPayload = {
-                _school: schoolId,
+            const configPayload = { 
+                _school: schoolId, 
                 config_key: 'student_details_config'
-            };
-            // Assuming an endpoint `/api/getConfiguration` exists to fetch from the `configurations` table
+             };
+
             const configResponse = await fetch('https://demoschool-git-mkoct28tempheader-punit-diwans-projects.vercel.app/api/getConfiguration', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -587,30 +570,26 @@ async function GenerateOdtFile() {
 
             if (configResponse.ok) {
                 const configData = await configResponse.json();
-                // Expecting the API to return the config value, e.g., { config_value: '[...]' }
                 if (configData && configData.config_value) {
                     studentDetailsConfigFromApi = configData.config_value;
                     console.log("✅ Successfully fetched student details configuration from API.");
                 } else {
-                    console.warn("⚠️ Configuration fetched, but 'config_value' is missing from the response.");
+                    console.warn("⚠️ Config fetched, but 'config_value' is missing.");
                 }
             } else {
-                console.warn(`⚠️ API failed to fetch remote configuration (${configResponse.statusText}). Will fall back to environment variable if available.`);
+                console.warn(`⚠️ API failed to fetch remote config (${configResponse.statusText}).`);
             }
         } catch (configError) {
-            console.warn(`⚠️ Error during API call for remote configuration: ${configError.message}. Will fall back to environment variable if available.`);
+            console.warn(`⚠️ Error fetching remote config: ${configError.message}.`);
         }
 
-
-        // Transform logo field to full URL
         if (schoolDetails.logo && typeof schoolDetails.logo === 'string') {
             schoolDetails.logo = `https://schoolerp-bucket.blr1.cdn.digitaloceanspaces.com/supa-img/${schoolId}/${schoolDetails.logo}`;
             console.log(`✅ Transformed school logo to: ${schoolDetails.logo}`);
         } else {
-            console.warn(`⚠️ School logo not found or invalid in schoolDetails. Using original value: ${schoolDetails.logo || 'undefined'}`);
+            console.warn(`⚠️ School logo not found or invalid.`);
         }
 
-        // STEP 1: Fetch student marks
         const marksPayload = {
             _school: schoolId,
             batchId: [batchId],
@@ -618,11 +597,10 @@ async function GenerateOdtFile() {
             currentdata: { division_id: DIVISION_ID, ranking_id: RANKING_ID }
         };
         if (studentIdsInput) {
-            console.log(`Filtering for specific students: ${studentIdsInput}`);
             marksPayload.student_ids = studentIdsInput.split(',');
         }
 
-        console.log("📥 Fetching student data with payload:", JSON.stringify(marksPayload));
+        console.log("📥 Fetching student data...");
         const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -630,31 +608,25 @@ async function GenerateOdtFile() {
         });
 
         if (!studentResponse.ok) throw new Error(`Failed to fetch student data: ${await studentResponse.text()}`);
-
         const studentResponseJson = await studentResponse.json();
         let students = studentResponseJson.students || studentResponseJson.data || [];
 
         if (studentIdsInput) {
             const requestedStudentIds = new Set(studentIdsInput.split(','));
-            console.log(`API returned ${students.length} students. Now filtering for the ${requestedStudentIds.size} requested student(s).`);
             students = students.filter(student => student && student.student_id && requestedStudentIds.has(student.student_id));
         }
 
-        students = students.filter(s => s && typeof s === 'object');
-        students = students.filter(s => s.student_id);
+        students = students.filter(s => s && s.student_id);
 
         if (students.length === 0) {
-            console.warn("⚠️ No valid students found matching the criteria. Exiting gracefully.");
-            await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No valid students found matching the criteria." });
+            console.warn("⚠️ No valid students found matching criteria. Exiting.");
+            await updateJobHistory(jobId, schoolId, { status: true, notes: "Completed: No valid students found." });
             return;
         }
-
         students = students.map(s => ({ ...s, _uid: s.student_id }));
-
         console.log(`✅ Found and will process ${students.length} student(s).`);
 
-        // STEP 2: Call config + transformation API
-        console.log("📡 Fetching marksheet config + transformed data from API...");
+        console.log("📡 Fetching marksheet config + transformed data...");
         const apiRes = await fetch('https://demoschool-git-mkoct28tempheader-punit-diwans-projects.vercel.app/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -666,61 +638,33 @@ async function GenerateOdtFile() {
                 students,
             }),
         });
-        if (!apiRes.ok) {
-            const bodyText = await apiRes.text();
-            throw new Error(`Config API failed: ${bodyText}`);
-        }
+        if (!apiRes.ok) throw new Error(`Config API failed: ${await apiRes.text()}`);
         const { transformedStudents } = await apiRes.json();
-        if (!transformedStudents) {
-            throw new Error(`Config API failed: missing transformedStudents in response.`);
-        }
+        if (!transformedStudents) throw new Error(`Config API failed: missing transformedStudents.`);
         console.log(`✅ Got transformed data for ${transformedStudents.length} students.`);
 
-        // STEP 3: Download template
         console.log("📥 Downloading template...");
         const templateBuffer = await downloadFile(templateUrl);
         const templatePath = path.join(outputDir, 'template.odt');
         await fs.writeFile(templatePath, templateBuffer);
         console.log(`✅ Template saved locally to: ${templatePath}`);
 
-        // STEP 4: Render ODT & convert to PDF
-
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
-            let transformedData = transformedStudents[i];
-            transformedData = cleanData(transformedData);
+            let transformedData = cleanData(transformedStudents[i]);
+            console.log(`\n--- 📝 Processing student: ${student.full_name} (${i + 1}/${students.length}) ---`);
 
-            console.log(`📝 Processing student: ${student.full_name}`);
-
-            // Replace images in ODT
             const modifiedOdtPath = await replaceImageInOdt(templatePath, student, schoolDetails, tempDir);
+            const dataForCarbone = { ...transformedData, school: schoolDetails };
 
-            const dataForCarbone = {
-                ...transformedData,
-                school: schoolDetails
-            };
-
-            // --- 🔄 NEW: DYNAMIC SLOTS LOGIC ---
-            // Prioritize the config from the API, but fall back to the environment variable for safety.
             const dynamicDetailsConfig = studentDetailsConfigFromApi;
-            console.log("dynamicDetailsConfigdynamicDetailsConfig", dynamicDetailsConfig);
-
             const details = {};
-
-            // Pre-fill a generous number of slots to prevent template errors
-            for (let j = 1; j <= 25; j++) {
-                details[`label${j}`] = '';
-                details[`value${j}`] = '';
-            }
+            for (let j = 1; j <= 25; j++) { details[`label${j}`] = ''; details[`value${j}`] = ''; }
 
             if (dynamicDetailsConfig && typeof dynamicDetailsConfig === 'string') {
-                console.log('🔄 Processing dynamic student details slots...');
                 try {
-                    // The config value (from API or env) is a JSON string, so it needs to be parsed.
                     const config = JSON.parse(dynamicDetailsConfig);
-
                     if (Array.isArray(config)) {
-                        // Loop through the configuration array
                         config.forEach((item, index) => {
                             const slotNumber = index + 1;
                             if (item.label && item.key) {
@@ -728,24 +672,19 @@ async function GenerateOdtFile() {
                                 details[`value${slotNumber}`] = transformedData[item.key] || '';
                             }
                         });
-                        console.log('✅ Populated dynamic details successfully.');
                     } else {
-                        console.warn('⚠️ Parsed dynamic config is not an array. Skipping.');
+                        console.warn('⚠️ Parsed dynamic config is not an array.');
                     }
                 } catch (e) {
-                    console.warn(`⚠️ Could not parse the dynamic details configuration. It might be invalid JSON. Error: ${e.message}`);
+                    console.warn(`⚠️ Could not parse dynamic details config: ${e.message}`);
                 }
-            } else {
-                console.log('ℹ️ No dynamic student details configuration found to process.');
             }
-
-            // Add the generated 'details' object to the main payload
             dataForCarbone.details = details;
 
             if (i === 0) {
-                console.log(`\n\n--- DEBUG: TRANSFORMED DATA (${student.full_name}) ---`);
+                console.log(`\n--- DEBUG: FIRST STUDENT PAYLOAD ---`);
                 console.log(JSON.stringify(dataForCarbone, null, 2));
-                console.log(`---------------------------------------------------\n\n`);
+                console.log(`------------------------------------\n`);
             }
 
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
@@ -753,81 +692,65 @@ async function GenerateOdtFile() {
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             await fs.writeFile(odtFilename, odtReport);
 
-            // Convert to PDF
             const originalPdfPath = await convertOdtToPdf(odtFilename, outputDir);
-            let finalPdfPath = originalPdfPath; // Default to the original PDF
+            let finalPdfPath = originalPdfPath;
 
-            // ---: Conditionally apply the overlay
             if (applyOverlay) {
                 const modifiedPdfPath = path.join(outputDir, `${fileSafeName}_modified.pdf`);
                 await addWhiteOverlay(originalPdfPath, modifiedPdfPath, overlayOptions);
-                finalPdfPath = modifiedPdfPath; // If overlay is applied, use the modified path for merging
+                finalPdfPath = modifiedPdfPath;
             } else {
-                console.log(`📜 Skipping white overlay for ${student.full_name} as per environment setting.`);
+                console.log(`📜 Skipping white overlay for ${student.full_name}.`);
             }
 
-            // Check for the existence of the final PDF to be used
             if (!require('fs').existsSync(finalPdfPath)) {
-                console.error(`\n\n--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
+                console.error(`--- ❌ DEBUG DATA that caused failure for ${student.full_name} ---`);
                 console.error(JSON.stringify(dataForCarbone, null, 2));
-                console.error(`------------------------------------------------------------------\n\n`);
-                throw new Error(`PDF generation failed for "${student.full_name}". Output file not found at: ${finalPdfPath}.`);
+                throw new Error(`PDF generation failed for "${student.full_name}". File not found: ${finalPdfPath}.`);
             }
-            console.log(`✅ Successfully created final PDF for ${student.full_name}`);
-
-            // Add the path of the final PDF to the array for merging
+            console.log(`✅ Successfully created PDF for ${student.full_name}`);
             pdfPaths.push(finalPdfPath);
         }
 
-        // STEP 5: Merge, COMPRESS, & Upload
-        const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
-        const compressedPdfPath = path.join(outputDir, 'merged_compressed.pdf');
-
         if (pdfPaths.length > 0) {
-            console.log('🔗 Merging all generated PDFs into one file...');
+            const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
+            const compressedPdfPath = path.join(outputDir, 'merged_compressed.pdf');
+            
+            console.log('🔗 Merging all generated PDFs...');
             await mergePdfs(pdfPaths, mergedPdfPath);
-            console.log(`✅ Merged PDF created at: ${mergedPdfPath}`);
+            console.log(`✅ Merged PDF created: ${mergedPdfPath}`);
 
             await compressPdf(mergedPdfPath, compressedPdfPath);
-
             const originalSize = (await fs.stat(mergedPdfPath)).size / (1024 * 1024);
             const compressedSize = (await fs.stat(compressedPdfPath)).size / (1024 * 1024);
-            console.log(`📊 Compression Results: Original size: ${originalSize.toFixed(2)} MB, Compressed size: ${compressedSize.toFixed(2)} MB`);
+            console.log(`📊 Compression: Original: ${originalSize.toFixed(2)} MB, Compressed: ${compressedSize.toFixed(2)} MB`);
 
             const filePath = `templates/marksheets/${schoolId}/result/${batchId}_${jobId}.pdf`;
             const fileBuffer = await fs.readFile(compressedPdfPath);
             const formData = new FormData();
-
-            formData.append('photo', fileBuffer, {
-                filename: 'merged_output.pdf',
-                contentType: 'application/pdf'
-            });
+            formData.append('photo', fileBuffer, { filename: 'merged_output.pdf', contentType: 'application/pdf' });
             formData.append('key', filePath);
             formData.append('ContentType', 'application/pdf');
             formData.append('jobId', jobId);
 
-            console.log(`📤 Uploading compressed PDF to: ${filePath}`);
+            console.log(`📤 Uploading compressed PDF...`);
             const uploadRes = await fetch('https://demoschool.edusparsh.com/api/uploadfileToDigitalOcean', {
                 method: 'POST',
                 headers: formData.getHeaders(),
                 body: formData,
             });
 
-            if (!uploadRes.ok) {
-                const errorData = await uploadRes.text();
-                throw new Error(`File upload API failed: ${errorData || uploadRes.statusText}`);
-            }
-
-            console.log("✅ File uploaded successfully. Updating job_history...");
+            if (!uploadRes.ok) throw new Error(`File upload failed: ${await uploadRes.text()}`);
+            console.log("✅ File uploaded. Updating job history...");
             await updateJobHistory(jobId, schoolId, { file_path: filePath, status: true });
-            console.log('✅ job_history updated successfully.');
+            console.log('✅ Job history updated.');
         } else {
             console.log('⚠️ No PDFs were generated to merge.');
         }
 
-        console.log("🎉 Marksheets generated and uploaded successfully.");
+        console.log("\n🎉 Marksheets generated and uploaded successfully.");
     } catch (error) {
-        console.error('❌ FATAL ERROR during marksheet generation:', error.message || error);
+        console.error('❌ FATAL ERROR:', error.message || error);
         if (jobId && schoolId) {
             await updateJobHistory(jobId, schoolId, { status: false, notes: `Failed: ${error.message}`.substring(0, 500) });
         }
