@@ -314,53 +314,58 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     const contentXmlPath = path.join(studentDir, 'content.xml');
     const picturesDir = path.join(studentDir, 'Pictures');
     await fs.mkdir(picturesDir, { recursive: true }); // Ensure Pictures directory exists
-
+    
     // --- NEW: UNIFIED AND NAME-BASED IMAGE REPLACEMENT LOGIC ---
 
     // Define the images we want to replace by their frame name in the ODT
     // and where to find their new URL in our data.
     const imageReplacements = [
-        {
+        { 
             frameName: 'Logo',
             url: schoolDetails.logo,
-            description: 'School Logo'
+            description: 'School Logo' 
         },
-        {
+        { 
             frameName: 'studentImage',
-            url: student.photo,
-            description: 'Student Photo'
-        },
-        {
-            frameName: 'principalSignature',
-            url: schoolDetails.signatures?.principalSignature,
-            description: 'Principal Signature'
-        },
-        {
-            frameName: 'inchargeSignature',
-            url: schoolDetails.signatures?.inchargeSignature,
-            description: 'In-charge Signature'
+             url: student.photo,
+              description: 'Student Photo'
         }
     ];
 
+    if (schoolDetails.signatures && typeof schoolDetails.signatures === 'object') {
+        for (const key in schoolDetails.signatures) {
+            if (Object.prototype.hasOwnProperty.call(schoolDetails.signatures, key)) {
+                const signatureInfo = schoolDetails.signatures[key];
+                if (signatureInfo && signatureInfo.url) {
+                    imageReplacements.push({
+                        frameName: key,
+                        url: signatureInfo.url,
+                        description: signatureInfo.name || `Signature ${key}`
+                    });
+                }
+            }
+        }
+    }
+    
     let anyImageReplaced = false;
 
     // Process each potential image replacement
-     for (const replacement of imageReplacements) {
+    for (const replacement of imageReplacements) {
         const { frameName, url, description } = replacement;
-
-        if (!url || !String(url).startsWith("http")) {
-            // console.log(`ℹ️ Skipping ${description} (${frameName}): No valid URL provided.`);
+      
+        if (!url || !String(url).startsWith("http")) { 
+                // console.log(`ℹ️ Skipping ${description} (${frameName}): No valid URL provided.`);
             continue;
         }
 
         const targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName);
-        if (!targetFilename) {
+        if (!targetFilename) { 
             // console.log(`ℹ️ Skipping ${description} (${frameName}): Frame not found in the template.`);
             continue;
         }
         
         console.log(`➡️  Mapping frame "${frameName}" to file "${targetFilename}" for replacement.`);
-
+      
         const imageBuffer = await fetchImage(url);
         if (!imageBuffer) {
             console.warn(`⚠️ Failed to fetch image for ${description} from ${url}. Skipping replacement.`);
