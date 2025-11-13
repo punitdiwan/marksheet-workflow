@@ -314,21 +314,21 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     const contentXmlPath = path.join(studentDir, 'content.xml');
     const picturesDir = path.join(studentDir, 'Pictures');
     await fs.mkdir(picturesDir, { recursive: true }); // Ensure Pictures directory exists
-    
+
     // --- NEW: UNIFIED AND NAME-BASED IMAGE REPLACEMENT LOGIC ---
 
     // Define the images we want to replace by their frame name in the ODT
     // and where to find their new URL in our data.
     const imageReplacements = [
-        { 
+        {
             frameName: 'Logo',
             url: schoolDetails.logo,
-            description: 'School Logo' 
+            description: 'School Logo'
         },
-        { 
+        {
             frameName: 'studentImage',
-             url: student.photo,
-              description: 'Student Photo'
+            url: student.photo,
+            description: 'Student Photo'
         }
     ];
 
@@ -346,26 +346,26 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             }
         }
     }
-    
+
     let anyImageReplaced = false;
 
     // Process each potential image replacement
     for (const replacement of imageReplacements) {
         const { frameName, url, description } = replacement;
-      
-        if (!url || !String(url).startsWith("http")) { 
-                // console.log(`ℹ️ Skipping ${description} (${frameName}): No valid URL provided.`);
+
+        if (!url || !String(url).startsWith("http")) {
+            // console.log(`ℹ️ Skipping ${description} (${frameName}): No valid URL provided.`);
             continue;
         }
 
         const targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName);
-        if (!targetFilename) { 
+        if (!targetFilename) {
             // console.log(`ℹ️ Skipping ${description} (${frameName}): Frame not found in the template.`);
             continue;
         }
-        
+
         console.log(`➡️  Mapping frame "${frameName}" to file "${targetFilename}" for replacement.`);
-      
+
         const imageBuffer = await fetchImage(url);
         if (!imageBuffer) {
             console.warn(`⚠️ Failed to fetch image for ${description} from ${url}. Skipping replacement.`);
@@ -484,29 +484,29 @@ async function GenerateOdtFile() {
 
         if (process.env.TEMPLATE_HEADER) {
             console.log(`🔍 Raw TEMPLATE_HEADER value: "${process.env.TEMPLATE_HEADER}"`);
-         
+
             let fixedJson = process.env.TEMPLATE_HEADER.trim().replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*):/g, '$1"$2":');
-         
+
             console.log(`🔧 Fixed TEMPLATE_HEADER attempt: "${fixedJson}"`);
 
             try {
                 templateHeader = JSON.parse(fixedJson);
                 console.log(`✅ Successfully parsed TEMPLATE_HEADER:`, templateHeader);
-            
+
                 // Ensure we have valid structure
                 if (typeof templateHeader.show_header !== 'boolean') {
                     console.warn(`⚠️ Invalid show_header value. Defaulting to true.`);
                     templateHeader.show_header = true;
                 }
-               
+
                 if (!templateHeader.margins || typeof templateHeader.margins !== 'object') {
                     console.warn(`⚠️ Invalid margins structure. Using defaults.`);
                     templateHeader.margins = { heightCm: 5, topMarginCm: 0, leftMarginCm: 0, rightMarginCm: 0 };
                 }
-          
+
             } catch (parseError) {
                 console.error(`❌ Failed to parse TEMPLATE_HEADER:`, parseError.message);
-               
+
                 templateHeader = {
                     show_header: true,
                     margins: { heightCm: 5, topMarginCm: 0, leftMarginCm: 0, rightMarginCm: 0 }
@@ -562,10 +562,10 @@ async function GenerateOdtFile() {
         console.log("⚙️ Fetching student details configuration...");
         let studentDetailsConfigFromApi = null;
         try {
-            const configPayload = { 
-                _school: schoolId, 
+            const configPayload = {
+                _school: schoolId,
                 config_key: 'student_details_config'
-             };
+            };
 
             const configResponse = await fetch('https://demoschool-git-mkoct28tempheader-punit-diwans-projects.vercel.app/api/getConfiguration', {
                 method: 'POST',
@@ -720,7 +720,7 @@ async function GenerateOdtFile() {
         if (pdfPaths.length > 0) {
             const mergedPdfPath = path.join(outputDir, 'merged_output.pdf');
             const compressedPdfPath = path.join(outputDir, 'merged_compressed.pdf');
-            
+
             console.log('🔗 Merging all generated PDFs...');
             await mergePdfs(pdfPaths, mergedPdfPath);
             console.log(`✅ Merged PDF created: ${mergedPdfPath}`);
