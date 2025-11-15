@@ -80,6 +80,20 @@ jobs:
             echo ""
           done < ../project.txt
 
+      - name: Check for Secrets
+        run: |
+          if [ -z "${{ secrets.ACCESS_TOKEN }}" ]; then
+            echo "❌ ACCESS_TOKEN secret is NOT set."
+          else
+            echo "✅ ACCESS_TOKEN secret is set."
+          fi
+          if [ -z "${{ secrets.DB_PASSWORD }}" ]; then
+            echo "❌ DB_PASSWORD secret is NOT set."
+          else
+            echo "✅ DB_PASSWORD secret is set."
+          fi
+
+
       # 8️⃣ Upload outputs as artifact (optional)
       - name: Upload Outputs
         if: always()
