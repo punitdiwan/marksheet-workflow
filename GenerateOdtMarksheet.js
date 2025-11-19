@@ -29,6 +29,44 @@ const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
 const parseXml = util.promisify(xml2js.parseString);
 
+// --- NEW: NAMING CONVENTION HELPER FUNCTION ---
+/**
+ * Applies a naming convention to all string values within a data structure.
+ * @param {*} data The data to transform (object, array, or primitive).
+ * @param {string} convention The convention to apply ('uppercase', 'lowercase', 'capitalize').
+ * @returns {*} The transformed data.
+ */
+function applyNamingConvention(data, convention) {
+    if (!convention || typeof data !== 'object' || data === null) {
+        if (typeof data === 'string') {
+            switch (convention.toLowerCase()) {
+                case 'uppercase':
+                    return data.toUpperCase();
+                case 'lowercase':
+                    return data.toLowerCase();
+                case 'capitalize':
+                    return data.replace(/\b\w/g, char => char.toUpperCase());
+                default:
+                    return data;
+            }
+        }
+        return data;
+    }
+
+    if (Array.isArray(data)) {
+        return data.map(item => applyNamingConvention(item, convention));
+    }
+
+    const newObj = {};
+    for (const key in data) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+            newObj[key] = applyNamingConvention(data[key], convention);
+        }
+    }
+    return newObj;
+}
+// --- END OF NEW HELPER FUNCTION ---
+
 // --- UTILITY FUNCTIONS ---
 async function updateJobHistory(jobId, schoolId, payload) {
     try {
@@ -588,6 +626,35 @@ async function GenerateOdtFile() {
             console.warn(`⚠️ Error fetching remote config: ${configError.message}.`);
         }
 
+        // --- NEW: FETCH NAMING CONVENTION CONFIG ---
+        console.log("⚙️ Fetching naming convention configuration...");
+        let namingConvention = null;
+        try {
+            const configPayload = {
+                _school: schoolId,
+                config_key: 'NamingConvention'
+            };
+            const configResponse = await fetch('https://demoschool-git-mkoct28tempheader-punit-diwans-projects.vercel.app/api/getConfiguration', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(configPayload),
+            });
+            if (configResponse.ok) {
+                const configData = await configResponse.json();
+                if (configData && configData.config_value) {
+                    namingConvention = configData.config_value;
+                    console.log(`✅ Successfully fetched NamingConvention: "${namingConvention}"`);
+                } else {
+                    console.warn("⚠️ NamingConvention config fetched, but 'config_value' is missing.");
+                }
+            } else {
+                console.warn(`⚠️ API failed to fetch NamingConvention config (${configResponse.statusText}).`);
+            }
+        } catch (configError) {
+            console.warn(`⚠️ Error fetching NamingConvention config: ${configError.message}.`);
+        }
+        // --- END OF NEW FETCH ---
+
         if (schoolDetails.logo && typeof schoolDetails.logo === 'string') {
             schoolDetails.logo = `https://schoolerp-bucket.blr1.cdn.digitaloceanspaces.com/supa-img/${schoolId}/${schoolDetails.logo}`;
             console.log(`✅ Transformed school logo to: ${schoolDetails.logo}`);
@@ -632,7 +699,7 @@ async function GenerateOdtFile() {
         console.log(`✅ Found and will process ${students.length} student(s).`);
 
         console.log("📡 Fetching marksheet config + transformed data...");
-        const apiRes = await fetch('https://demoschool-git-mkoct28tempheader-punit-diwans-projects.vercel.app/api/marksheetdataodt', {
+        const apiRes = await fetch('https://demoschool-git-mknov18namingsorting-punit-diwans-projects.vercel.app/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -660,10 +727,9 @@ async function GenerateOdtFile() {
             console.log(`\n--- 📝 Processing student: ${student.full_name} (${i + 1}/${students.length}) ---`);
 
             const modifiedOdtPath = await replaceImageInOdt(templatePath, student, schoolDetails, tempDir);
-            const dataForCarbone = { ...transformedData, school: schoolDetails };
 
             const dynamicDetailsConfig = studentDetailsConfigFromApi;
-            const details = {};
+            let details = {};
             for (let j = 1; j <= 25; j++) { details[`label${j}`] = ''; details[`value${j}`] = ''; }
 
             if (dynamicDetailsConfig && typeof dynamicDetailsConfig === 'string') {
@@ -684,7 +750,15 @@ async function GenerateOdtFile() {
                     console.warn(`⚠️ Could not parse dynamic details config: ${e.message}`);
                 }
             }
-            dataForCarbone.details = details;
+
+            if (namingConvention) {
+                console.log(`Applying "${namingConvention}" naming convention to student data...`);
+                transformedData = applyNamingConvention(transformedData, namingConvention);
+                details = applyNamingConvention(details, namingConvention);
+            }
+
+            const dataForCarbone = { ...transformedData, school: schoolDetails, details: details };
+
 
             if (i === 0) {
                 console.log(`\n--- DEBUG: FIRST STUDENT PAYLOAD ---`);
