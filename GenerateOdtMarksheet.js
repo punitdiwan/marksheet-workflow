@@ -673,7 +673,7 @@ async function GenerateOdtFile() {
         }
 
         console.log("📥 Fetching student data...");
-        const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
+        const studentResponse = await fetch('https://demoschool-git-mknov18namingsorting-punit-diwans-projects.vercel.app/api/cce_examv1/getMarks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(marksPayload),
