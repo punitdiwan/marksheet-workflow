@@ -699,7 +699,7 @@ async function GenerateOdtFile() {
         console.log(`✅ Found and will process ${students.length} student(s).`);
 
         console.log("📡 Fetching marksheet config + transformed data...");
-        const apiRes = await fetch('https://demoschool-git-mknov18namingsorting-punit-diwans-projects.vercel.app/api/marksheetdataodt', {
+        const apiRes = await fetch('https://demoschool-git-mkdec09abscount-punit-diwans-projects.vercel.app/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
