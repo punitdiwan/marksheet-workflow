@@ -1,0 +1,25 @@
+name: Check and Un paid Installments for Schools
+
+on:
+  workflow_dispatch:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * *"
+
+jobs:
+  installments-pipeline:
+    name: Check and Unpaid Installments for All Schools
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Checkout this repo (where the workflow lives)
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+
+      # 2️⃣ Clone the python-birthday-reminder repo
+      - name: Give executive permissions
+        run: |
+          chmod +x ./check_installments.sh
+      - name: Run the Installments Check Script
+        run: |
+          ./check_installments.sh
