@@ -43,7 +43,9 @@ jobs:
           onlyDate=$(date '+%Y-%m-%d')
           mkdir -p schema_backup/${date} 
           PGPASSWORD=your-super-secret-and-long-postgres-password pg_dump -h studio.maitretech.com -p 5432 -U postgres -d postgres --schema auth  -f auth_${date}.sql
+          PGPASSWORD=your-super-secret-and-long-postgres-password pg_dump -h studio.maitretech.com -p 5432 -U postgres -d postgres --schema public  -f public_${date}.sql
           spaces-cli up -s schoolerp-bucket -r blr1 -i DO00Z6BQLU76298YFU2G -k l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo -t schoolscoop-supa/auth/${onlyDate}  auth_${date}.sql
+          spaces-cli up -s schoolerp-bucket -r blr1 -i DO00Z6BQLU76298YFU2G -k l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo -t schoolscoop-supa/public/${onlyDate}  public_${date}.sql
           for schema in $lines; do
              noCR=$(echo $schema | sed -e 's/\r//g')
              PGPASSWORD=your-super-secret-and-long-postgres-password pg_dump -h studio.maitretech.com -p 5432 -U postgres -d postgres --schema ${noCR}  -f ${noCR}_${date}.sql
