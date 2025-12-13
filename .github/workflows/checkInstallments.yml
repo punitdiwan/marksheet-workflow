@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     branches: [main]
   schedule:
-    - cron: "0 6 * * *"
-
+    - cron: "0 13 * * *"
+# 30 0 * * *
 jobs:
   installments-pipeline:
     name: Check and Unpaid Installments for All Schools
