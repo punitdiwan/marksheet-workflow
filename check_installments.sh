@@ -6,7 +6,7 @@
 SUPABASE_API_URL="https://studio.maitretech.com/rest/v1/projects"
 SUPABASE_API_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE"
 
-NEXT_API_URL="https://demoschool-git-mddec9-punit-diwans-projects.vercel.app/api/unpaidInstallments"
+NEXT_API_URL="https://jnpsbhopal.edusparsh.com/api/unpaidInstallments"
 
 OUTPUT_DIR="$(pwd)/results"
 
@@ -21,7 +21,7 @@ echo "Fetching school_ids (prj_name)..."
 # Fetch prj_name & Loop
 # ==========================
 curl -s \
-  "${SUPABASE_API_URL}?apikey=${SUPABASE_API_KEY}&is_trial=eq.false" \
+  "${SUPABASE_API_URL}?apikey=${SUPABASE_API_KEY}&is_trial=eq.false&is_disabled=eq.false" \
 | jq -r '.[].prj_name' \
 | sort -u \
 | while read -r SCHOOL_ID; do
@@ -60,21 +60,22 @@ echo "Checking installments expiry..."
 
 for FILE in "$OUTPUT_DIR"/*.json; do
   SCHOOL_NAME=$(basename "$FILE" .json)
-
   EXPIRED=$(jq -r --arg today "$TODAY_EPOCH" '
     (.installments // [])[]
     | select(.end_date != null)
     | (.end_date | sub("\\+00:00$"; "Z") | fromdateiso8601) as $end_epoch
     | (($end_epoch - ($today | tonumber))/86400 | floor) as $days_remaining
-    | select($days_remaining <= 0)
+    | select($days_remaining < 0)   # <-- strictly less than 0
     | .name
   ' "$FILE")
-
   if [[ -n "$EXPIRED" ]]; then
     echo "❌ Installments expired for school: $SCHOOL_NAME -> $EXPIRED"
     SCHOOLS_TO_DISABLE+=("$SCHOOL_NAME")
   fi
 done
+
+echo "${SCHOOLS_TO_DISABLE[@]}"
+
 
 # Call API if there are schools to disable
 if [ ${#SCHOOLS_TO_DISABLE[@]} -gt 0 ]; then
@@ -83,7 +84,7 @@ if [ ${#SCHOOLS_TO_DISABLE[@]} -gt 0 ]; then
   # Convert Bash array to JSON array
   SCHOOLS_JSON=$(printf '%s\n' "${SCHOOLS_TO_DISABLE[@]}" | jq -R . | jq -s .)
 
-  curl -X POST "https://demoschool-git-mddec9-punit-diwans-projects.vercel.app/api/disableSchool" \
+  curl -X POST "https://jnpsbhopal.edusparsh.com/api/disableSchool" \
        -H "Content-Type: application/json" \
        -d "{\"schoolNames\": $SCHOOLS_JSON}"
 else

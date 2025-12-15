@@ -1,10 +1,10 @@
-name: Check and Un paid Installments for Schools
+name: Check and Unpaid Installments for Schools
 
 on:
   workflow_dispatch:
     branches: [main]
   schedule:
-    - cron: "30 0 * * *"
+    - cron: "30 22 * * *"
 jobs:
   installments-pipeline:
     name: Check and Unpaid Installments for All Schools
