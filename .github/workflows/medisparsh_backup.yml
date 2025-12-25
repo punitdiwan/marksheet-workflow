@@ -1,0 +1,35 @@
+name: Backup Script for Medisparsh
+
+on:
+  workflow_dispatch:
+    branches: [main]
+  # schedule:
+  #   - cron: "30 22 * * *"
+jobs:
+  backup-pipeline:
+    name: Backup Script for Medisparsh
+    runs-on: ubuntu-latest
+
+
+    steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: Install postgres cli
+        run: |
+          sudo apt-get update
+          sudo apt-get install postgresql-client
+
+      - name: Install DO Space
+        run: npm install -g spaces-cli
+
+      - name: Give executive permissions
+        run: |
+          chmod +x ./backup.sh
+      - name: Run the Installments Check Script
+        run: |
+          ./backup.sh
