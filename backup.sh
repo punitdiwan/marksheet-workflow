@@ -80,7 +80,7 @@ do
 CSV_COUNT=$(find "$ORG_DIR" -maxdepth 1 -type f -name "*.csv" | wc -l)
 
 if [ "$CSV_COUNT" -gt 0 ]; then
-  TIMESTAMP=$(date +%Y-%m-%d_%H-%M-%S)
+  TIMESTAMP=$(date +%Y-%m-%d)
   ZIP_FILE="$BACKUP_DIR/${SAFE_NAME}_${TIMESTAMP}.zip"
 
   echo "📦 Creating ZIP without backup folder"
@@ -100,11 +100,11 @@ if [ "$CSV_COUNT" -gt 0 ]; then
     -r blr1 \
     -i "$DO_ACCESS_KEY" \
     -k "$DO_SECRET_KEY" \
-    -t "schoolscoop-supa/medisparsh/${SAFE_NAME}/${TIMESTAMP}" \
+    -t "medisparsh/${SAFE_NAME}/${TIMESTAMP}" \
     "$ZIP_FILE"
 
   echo "✅ Upload completed:"
-  echo "   schoolscoop-supa/medisparsh/${SAFE_NAME}/${TIMESTAMP}/$(basename "$ZIP_FILE")"
+  echo "medisparsh/${SAFE_NAME}/${TIMESTAMP}/$(basename "$ZIP_FILE")"
 
 else
   echo "⏭️ No CSV files found — skipping ZIP & upload"
