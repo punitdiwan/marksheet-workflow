@@ -53,6 +53,8 @@ echo "🎉 All schools processed."
 OUTPUT_DIR="$(pwd)/results"
 TODAY_EPOCH=$(date -u -d "$(date -u +%Y-%m-%d) 00:00:00" +"%s")
 
+echo "TODAY: $TODAY_EPOCH"
+
 # Array to hold schools to disable
 SCHOOLS_TO_DISABLE=()
 
