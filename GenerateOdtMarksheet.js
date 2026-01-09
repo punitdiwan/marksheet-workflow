@@ -605,7 +605,7 @@ async function GenerateOdtFile() {
                 config_key: 'student_details_config'
             };
 
-            const configResponse = await fetch('https://demoschool-git-mkoct28tempheader-punit-diwans-projects.vercel.app/api/getConfiguration', {
+            const configResponse = await fetch('https://demoschool.edusparsh.com/api/getConfiguration', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(configPayload),
@@ -634,7 +634,7 @@ async function GenerateOdtFile() {
                 _school: schoolId,
                 config_key: 'NamingConvention'
             };
-            const configResponse = await fetch('https://demoschool-git-mkoct28tempheader-punit-diwans-projects.vercel.app/api/getConfiguration', {
+            const configResponse = await fetch('https://demoschool.edusparsh.com/api/getConfiguration', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(configPayload),
@@ -673,9 +673,9 @@ async function GenerateOdtFile() {
         }
 
         console.log("📥 Fetching student data...");
-        console.log("https://demoschool-git-mkdec31editmarks-punit-diwans-projects.vercel.app/api/cce_examv1/getMarks");
+        console.log("https://demoschool.edusparsh.com/api/cce_examv1/getMarks");
 
-        const studentResponse = await fetch('https://demoschool-git-mkdec31editmarks-punit-diwans-projects.vercel.app/api/cce_examv1/getMarks', {
+        const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(marksPayload),
@@ -701,7 +701,7 @@ async function GenerateOdtFile() {
         console.log(`✅ Found and will process ${students.length} student(s).`);
 
         console.log("📡 Fetching marksheet config + transformed data...");
-        const apiRes = await fetch('https://demoschool-git-mkdec31editmarks-punit-diwans-projects.vercel.app/api/marksheetdataodt', {
+        const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
