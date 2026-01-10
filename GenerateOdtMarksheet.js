@@ -421,12 +421,17 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     }
 
     if (anyImageReplaced) {
+        // ERROR FIX: Do not format content.xml. 
+        // Formatting adds whitespace/newlines that break Carbone's tag parsing (e.g. {d.subjects...}).
+        /* 
         try {
             await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
             console.log(`✅ Formatted content.xml for ${student.full_name}`);
         } catch (err) {
             console.warn(`⚠️ xmllint formatting failed: ${err.message}. Using unformatted content.xml.`);
         }
+        */
+        console.log(`✅ Images replaced for ${student.full_name}`);
     } else {
         console.log(`ℹ️ No images were replaced for ${student.full_name}.`);
     }
