@@ -5,11 +5,11 @@ on:
     branches: [main]
   # schedule:
   #   - cron: "30 22 * * *"
+
 jobs:
   backup-pipeline:
     name: Backup Script for Medisparsh
     runs-on: ubuntu-latest
-
 
     steps:
       - name: Checkout current repo
@@ -19,15 +19,45 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 18
-      - name: Install postgres cli
+
+      # ✅ Add PostgreSQL official repo
+      - name: Install PostgreSQL client 15
         run: |
           sudo apt-get update
-          sudo apt-get install postgresql-client-15
+          sudo apt-get install -y wget ca-certificates gnupg
+          wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | \
+            sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] \
+          http://apt.postgresql.org/pub/repos/apt noble-pgdg main" | \
+          sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-15
 
-      - name: Install DO Space
+      - name: Verify pg_dump
+        run: pg_dump --version
+
+      - name: Install DO Spaces CLI
         run: npm install -g spaces-cli
 
-      - name: Give executive permissions
+      # ✅ Backup + upload
+      - name: Run backup and upload to DO Spaces
+        env:
+          PGPASSWORD: your-super-secret-and-long-postgres-password
+          DO_SPACE_KEY: DO00Z6BQLU76298YFU2G
+          DO_SPACE_SECRET: l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo
         run: |
-          PGPASSWORD=your-super-secret-and-long-postgres-password pg_dump -h studio.maitretech.com -p 5432 -U postgres -d postgres --schema auth  -f auth.sql
-          spaces-cli up -s schoolerp-bucket -r blr1 -i DO00Z6BQLU76298YFU2G -k l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo -t schoolscoop-supa/auth/test  auth.sql
+          pg_dump \
+            -h studio.maitretech.com \
+            -p 5432 \
+            -U postgres \
+            -d postgres \
+            --schema auth \
+            -f auth.sql
+
+          spaces-cli up \
+            -s schoolerp-bucket \
+            -r blr1 \
+            -i "$DO_SPACE_KEY" \
+            -k "$DO_SPACE_SECRET" \
+            -t schoolscoop-supa/auth/test \
+            auth.sql
