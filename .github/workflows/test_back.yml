@@ -1,0 +1,33 @@
+name: test backup script
+
+on:
+  workflow_dispatch:
+    branches: [main]
+  # schedule:
+  #   - cron: "30 22 * * *"
+jobs:
+  backup-pipeline:
+    name: Backup Script for Medisparsh
+    runs-on: ubuntu-latest
+
+
+    steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: Install postgres cli
+        run: |
+          sudo apt-get update
+          sudo apt-get install postgresql-client-15
+
+      - name: Install DO Space
+        run: npm install -g spaces-cli
+
+      - name: Give executive permissions
+        run: |
+          PGPASSWORD=your-super-secret-and-long-postgres-password pg_dump -h studio.maitretech.com -p 5432 -U postgres -d postgres --schema auth  -f auth.sql
+          spaces-cli up -s schoolerp-bucket -r blr1 -i DO00Z6BQLU76298YFU2G -k l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo -t schoolscoop-supa/auth/test  auth.sql
