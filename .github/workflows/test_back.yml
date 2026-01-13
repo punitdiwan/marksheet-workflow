@@ -24,6 +24,7 @@ jobs:
             set -e
 
             echo "🚀 Starting schema exposure job..."
+            ifconfig eth0
 
             ############################
             # Variables
@@ -62,13 +63,7 @@ jobs:
                 --schema "${CORE_SCHEMA}" \
                 -f "${CORE_SCHEMA}_${DATE_TIME}.sql"
 
-              spaces-cli up \
-                -s "${SPACES_BUCKET}" \
-                -r "${SPACES_REGION}" \
-                -i "${SPACES_KEY}" \
-                -k "${SPACES_SECRET}" \
-                -t "schoolscoop-supa/${CORE_SCHEMA}/${ONLY_DATE}" \
-                "${CORE_SCHEMA}_${DATE_TIME}.sql"
+              s3cmd put ${CORE_SCHEMA}_${DATE_TIME}.sql s3://schoolerp-bucket/schoolscoop-supa/${CORE_SCHEMA}/${ONLY_DATE}/
 
               echo "☁️ Uploaded ${CORE_SCHEMA}"
             done
@@ -86,13 +81,7 @@ jobs:
                 --schema "${schema}" \
                 -f "${schema}_${DATE_TIME}.sql"
 
-              spaces-cli up \
-                -s "${SPACES_BUCKET}" \
-                -r "${SPACES_REGION}" \
-                -i "${SPACES_KEY}" \
-                -k "${SPACES_SECRET}" \
-                -t "schoolscoop-supa/${schema}/${ONLY_DATE}" \
-                "${schema}_${DATE_TIME}.sql"
+              s3cmd put ${schema}_${DATE_TIME}.sql s3://schoolerp-bucket/schoolscoop-supa/${schema}/${ONLY_DATE}/
 
               echo "☁️ Uploaded schema: ${schema}"
             done < "${WORKDIR}/project.txt"
