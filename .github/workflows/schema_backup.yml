@@ -1,15 +1,15 @@
-name: Dump and upload schemas
+name: Backup Script for School
 
 on:
   workflow_dispatch:
     branches:
       - main
-    # schedule:
-    # - cron: "30 10 * * *"
+    schedule:
+    - cron: "30 10 * * *"
 
 jobs:
-  expose_schema_school:
-    name: Expose schema to self-host
+  backup_schema_school:
+    name: Backup Script for School
     runs-on: ubuntu-latest
 
     steps:
@@ -22,10 +22,7 @@ jobs:
           port: 22
           script: |
             set -e
-
             echo "🚀 Starting schema exposure job..."
-            ifconfig eth0
-
             ############################
             # Variables
             ############################
