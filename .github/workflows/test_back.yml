@@ -1,56 +1,123 @@
-name: test backup script
+name: Dump and upload schemas
 
 on:
   workflow_dispatch:
-    branches: [main]
-  # schedule:
-  #   - cron: "30 22 * * *"
+    branches:
+      - main
+    # schedule:
+    # - cron: "30 10 * * *"
 
 jobs:
-  backup-pipeline:
-    name: Backup Script for Medisparsh
+  expose_schema_school:
+    name: Expose schema to self-host
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout current repo
-        uses: actions/checkout@v4
-
-      - name: Install Node
-        uses: actions/setup-node@v4
+      - name: Dump and upload schemas
+        uses: appleboy/ssh-action@v1
         with:
-          node-version: 18
+          host: con-in.maitretech.com
+          username: root
+          key: ${{ secrets.SELF_HOST_SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -e
 
-      # ✅ Add PostgreSQL official repo
-      - name: Install PostgreSQL client 15
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
+            echo "🚀 Starting schema exposure job..."
 
-      - name: Verify pg_dump
-        run: pg_dump --version
+            ############################
+            # Variables
+            ############################
+            DB_HOST="studio.maitretech.com"
+            DB_NAME="postgres"
+            DB_USER="postgres"
+            DB_PORT="5432"
+            SPACES_BUCKET="schoolerp-bucket"
+            SPACES_REGION="blr1"
+            SPACES_KEY="DO00Z6BQLU76298YFU2G"
+            SPACES_SECRET="l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo"
 
-      - name: Install DO Spaces CLI
-        run: npm install -g spaces-cli
+            DATE_TIME=$(date '+%Y-%m-%dT-%H:%M:%S')
+            ONLY_DATE=$(date '+%Y-%m-%d')
+            WORKDIR="$(pwd)"
 
-      # ✅ Backup + upload
-      - name: Run backup and upload to DO Spaces
-        env:
-          PGPASSWORD: your-super-secret-and-long-postgres-password
-          DO_SPACE_KEY: DO00Z6BQLU76298YFU2G
-          DO_SPACE_SECRET: l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo
-        run: |
-          pg_dump \
-            -h studio.maitretech.com \
-            -p 5432 \
-            -U postgres \
-            -d postgres \
-            --schema auth \
-            -f auth.sql
+            ############################
+            # Install Node.js
+            ############################
+            if ! command -v node >/dev/null 2>&1; then
+              echo "📦 Installing Node.js..."
+              curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+              apt-get install -y nodejs
+            else
+              echo "✅ Node.js already installed"
+            fi
 
-          spaces-cli up \
-            -s schoolerp-bucket \
-            -r blr1 \
-            -i "$DO_SPACE_KEY" \
-            -k "$DO_SPACE_SECRET" \
-            -t schoolscoop-supa/auth/test \
-            auth.sql
+            ############################
+            # Install spaces-cli
+            ############################
+            if ! command -v spaces-cli >/dev/null 2>&1; then
+              echo "📦 Installing spaces-cli..."
+              npm install -g spaces-cli
+            else
+              echo "✅ spaces-cli already installed"
+            fi
+
+            ############################
+            # Fetch schemas list
+            ############################
+            echo "📥 Fetching schema list..."
+            curl -s "https://studio.maitretech.com/rest/v1/projects?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE&is_trial=eq.false&is_disabled=eq.false&order=prj_name.asc" | jq -r ".[] | .prj_name" > $(pwd)/project.txt
+
+            ############################
+            # Dump & upload core schemas
+            ############################
+            for CORE_SCHEMA in auth public; do
+              echo "🗄️ Dumping schema: ${CORE_SCHEMA}"
+
+              PGPASSWORD=your-super-secret-and-long-postgres-password \
+              pg_dump -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" \
+                --schema "${CORE_SCHEMA}" \
+                -f "${CORE_SCHEMA}_${DATE_TIME}.sql"
+
+              spaces-cli up \
+                -s "${SPACES_BUCKET}" \
+                -r "${SPACES_REGION}" \
+                -i "${SPACES_KEY}" \
+                -k "${SPACES_SECRET}" \
+                -t "schoolscoop-supa/${CORE_SCHEMA}/${ONLY_DATE}" \
+                "${CORE_SCHEMA}_${DATE_TIME}.sql"
+
+              echo "☁️ Uploaded ${CORE_SCHEMA}"
+            done
+
+            ############################
+            # Dump & upload dynamic schemas
+            ############################
+            while read -r schema; do
+              schema=$(echo "$schema" | sed 's/\r//g')
+
+              echo "🗄️ Dumping schema: ${schema}"
+
+              PGPASSWORD=your-super-secret-and-long-postgres-password \
+              pg_dump -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" \
+                --schema "${schema}" \
+                -f "${schema}_${DATE_TIME}.sql"
+
+              spaces-cli up \
+                -s "${SPACES_BUCKET}" \
+                -r "${SPACES_REGION}" \
+                -i "${SPACES_KEY}" \
+                -k "${SPACES_SECRET}" \
+                -t "schoolscoop-supa/${schema}/${ONLY_DATE}" \
+                "${schema}_${DATE_TIME}.sql"
+
+              echo "☁️ Uploaded schema: ${schema}"
+            done < "${WORKDIR}/project.txt"
+
+            ############################
+            # Cleanup
+            ############################
+            rm -f project.txt *.sql
+
+            echo "🧹 Cleanup completed"
+            echo "🎉 All schema dumps and uploads completed successfully!"
