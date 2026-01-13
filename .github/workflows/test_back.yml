@@ -44,23 +44,6 @@ jobs:
             ############################
             # Install Node.js
             ############################
-            if ! command -v node >/dev/null 2>&1; then
-              echo "📦 Installing Node.js..."
-              curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-              apt-get install -y nodejs
-            else
-              echo "✅ Node.js already installed"
-            fi
-
-            ############################
-            # Install spaces-cli
-            ############################
-            if ! command -v spaces-cli >/dev/null 2>&1; then
-              echo "📦 Installing spaces-cli..."
-              npm install -g spaces-cli
-            else
-              echo "✅ spaces-cli already installed"
-            fi
 
             ############################
             # Fetch schemas list
