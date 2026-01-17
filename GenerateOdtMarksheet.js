@@ -79,14 +79,10 @@ async function downloadFile(url) {
 }
 
 async function convertOdtToPdf(odtPath, outputDir) {
-    // Ensure output directory exists and is absolute
     const absOutputDir = path.resolve(outputDir);
     const absOdtPath = path.resolve(odtPath);
 
-    // Check if source exists before running command
-    try {
-        await fs.access(absOdtPath);
-    } catch (e) {
+    try { await fs.access(absOdtPath); } catch (e) {
         throw new Error(`ODT Source file missing before conversion: ${absOdtPath}`);
     }
 
@@ -94,14 +90,9 @@ async function convertOdtToPdf(odtPath, outputDir) {
     try {
         console.log(`🔄 Running conversion for: ${path.basename(odtPath)}`);
         const { stdout, stderr } = await execPromise(command);
-
-        if (stderr && !stderr.toLowerCase().includes('warning')) {
-            console.warn(`[LibreOffice STDERR]:`, stderr);
-        }
+        if (stderr && !stderr.toLowerCase().includes('warning')) console.warn(`[LibreOffice STDERR]:`, stderr);
 
         const expectedPdfPath = path.join(absOutputDir, path.basename(odtPath, '.odt') + '.pdf');
-
-        // Verify PDF was actually created
         try {
             await fs.access(expectedPdfPath);
             return expectedPdfPath;
@@ -173,18 +164,6 @@ async function fetchImage(url) {
     } catch (err) {
         console.warn("⚠️ Could not fetch or convert photo:", url);
         return null;
-    }
-}
-
-async function waitForFile(filePath, retries = 5, delay = 100) {
-    for (let i = 0; i < retries; i++) {
-        try {
-            await fs.access(filePath);
-            return true;
-        } catch (err) {
-            if (i < retries - 1) await new Promise(resolve => setTimeout(resolve, delay));
-            else return false;
-        }
     }
 }
 
@@ -298,31 +277,28 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         } catch (e) { }
     }
 
-    // --- CRITICAL FIX: RE-ZIP ODT CORRECTLY ---
+    // --- RE-ZIP ODT CORRECTLY ---
     const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id;
     const newOdtPath = path.join(tempDir, `${safeName}.odt`);
     const zip = new yazl.ZipFile();
 
-    // 1. Add mimetype file FIRST and UNCOMPRESSED
-    const mimetypePath = path.join(studentDir, 'mimetype');
-    try {
-        await fs.access(mimetypePath);
-        // Add mimetype stored (0 compression)
-        zip.addFile(mimetypePath, 'mimetype', { compress: false });
-    } catch (e) {
-        console.warn("⚠️ mimetype file missing in ODT, file might be corrupt.");
-    }
+    // 1. Add mimetype file explicitly as Buffer (UNCOMPRESSED)
+    // This ensures no newlines and correct format
+    const mimetypeBuffer = Buffer.from('application/vnd.oasis.opendocument.text');
+    zip.addBuffer(mimetypeBuffer, 'mimetype', { compress: false });
 
     // 2. Add remaining files
     const walkDir = async (dir, zipPath = '') => {
         const files = await fs.readdir(dir);
         for (const file of files) {
-            // Skip mimetype as we added it already
+            // Skip mimetype as we added it manually
             if (zipPath === '' && file === 'mimetype') continue;
 
             const fullPath = path.join(dir, file);
             const stats = await fs.stat(fullPath);
-            const zipEntry = path.join(zipPath, file);
+
+            // Normalize path to use forward slashes for ZIP spec
+            const zipEntry = zipPath ? `${zipPath}/${file}` : file;
 
             if (stats.isDirectory()) {
                 await walkDir(fullPath, zipEntry);
@@ -376,21 +352,21 @@ async function GenerateOdtFile() {
         const groupid = process.env.GROUP_ID;
         const batchId = process.env.BATCH_ID;
         const courseId = process.env.COURSE_ID;
-        const RANKING_ID = process.env.RANKING_ID;
-        const DIVISION_ID = process.env.DIVISION_ID;
         const templateUrl = process.env.TEMPLATE_URL;
+
+        // Sanitize IDs - Ensure they are strings but treat "null" string as empty
+        const RANKING_ID = (process.env.RANKING_ID && process.env.RANKING_ID !== 'null') ? process.env.RANKING_ID : "";
+        const DIVISION_ID = (process.env.DIVISION_ID && process.env.DIVISION_ID !== 'null') ? process.env.DIVISION_ID : "";
+
         const groupIds = groupid?.split(",");
         const studentIdsInput = process.env.STUDENT_IDS;
 
         let templateHeader = { show_header: true, margins: { heightCm: 5 } };
         if (process.env.TEMPLATE_HEADER) {
             try {
-                // Sanitize input JSON
                 let fixedJson = process.env.TEMPLATE_HEADER.trim().replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*):/g, '$1"$2":');
                 templateHeader = JSON.parse(fixedJson);
-            } catch (e) {
-                console.warn("⚠️ Header parsing failed, using defaults.");
-            }
+            } catch (e) { }
         }
 
         if (!templateUrl || !schoolId || !batchId) throw new Error('❌ Missing env variables.');
@@ -503,7 +479,7 @@ async function GenerateOdtFile() {
             const dataForCarbone = { ...transformedData, school: schoolDetails, details };
             const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
 
-            // Render directly from the modified ODT path which is now a VALID ODT
+            // Render directly from the modified ODT path
             const odtReport = await carboneRender(modifiedOdtPath, dataForCarbone);
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             await fs.writeFile(odtFilename, odtReport);
