@@ -2,9 +2,8 @@ name: Backup Script for School
 
 on:
   workflow_dispatch:
-    branches:
-      - main
-    schedule:
+    branches: [main]
+  schedule:
     - cron: "30 10 * * *"
 
 jobs:
@@ -30,7 +29,7 @@ jobs:
             DB_NAME="postgres"
             DB_USER="postgres"
             DB_PORT="5432"
-  
+
 
             DATE_TIME=$(date '+%Y-%m-%dT-%H:%M:%S')
             ONLY_DATE=$(date '+%Y-%m-%d')
