@@ -668,14 +668,21 @@ async function GenerateOdtFile() {
             group: groupIds,
             currentdata: { division_id: DIVISION_ID, ranking_id: RANKING_ID }
         };
+
+        // Determine which API to call. If we have specific students (Previous Year), use studentWiseMarks.
+        let fetchUrl = 'https://demoschool.edusparsh.com/api/cce_examv1/getMarks';
+
         if (studentIdsInput) {
-            marksPayload.student_ids = studentIdsInput.split(',');
+            const sIds = studentIdsInput.split(',');
+            marksPayload.student_ids = sIds;
+            marksPayload.student_id = sIds; // Add this key as studentWiseMarks often expects 'student_id'
+            fetchUrl = 'https://demoschool.edusparsh.com/api/cce_examv1/studentWiseMarks';
         }
 
         console.log("📥 Fetching student data...");
-        console.log("https://demoschool.edusparsh.com/api/cce_examv1/getMarks");
+        console.log(fetchUrl);
 
-        const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
+        const studentResponse = await fetch(fetchUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(marksPayload),
