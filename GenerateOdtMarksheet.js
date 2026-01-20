@@ -514,30 +514,6 @@ async function GenerateOdtFile() {
         const templateUrl = process.env.TEMPLATE_URL;
         const groupIds = groupid?.split(",");
         const studentIdsInput = process.env.STUDENT_IDS;
-        let studentIdsArray = [];
-
-        if (studentIdsInput) {
-            try {
-                // 1. Try JSON.parse first (Standard flow from Next.js API where data is stringified)
-                const parsed = JSON.parse(studentIdsInput);
-                if (Array.isArray(parsed)) {
-                    studentIdsArray = parsed;
-                } else if (typeof parsed === 'string') {
-                    // Handle case where it might be double stringified or just a string
-                    studentIdsArray = parsed.split(',').map(s => s.trim());
-                }
-            } catch (e) {
-                // 2. Fallback: Split by comma (Manual trigger or legacy flow)
-                // Remove brackets/quotes just in case the raw string looks like '["id"]' but failed parse
-                const cleaned = studentIdsInput.replace(/[\[\]"]/g, '');
-                if (cleaned.trim()) {
-                    studentIdsArray = cleaned.split(',').map(s => s.trim()).filter(Boolean);
-                }
-            }
-        }
-        console.log(`DEBUG: Parsed Student IDs count: ${studentIdsArray.length}`);
-        // --- END UPDATED ---
-
         // --- IMPROVED: Safely parse TEMPLATE_HEADER with better error handling ---
         let templateHeader = {
             show_header: true,
@@ -686,26 +662,20 @@ async function GenerateOdtFile() {
             console.warn(`⚠️ School logo not found or invalid.`);
         }
 
-        const cleanRankingId = (RANKING_ID === 'null' || RANKING_ID === '') ? null : RANKING_ID;
-        const cleanDivisionId = (DIVISION_ID === 'null' || DIVISION_ID === '') ? null : DIVISION_ID;
-
-        console.log(`DEBUG: Sending Payload with - Ranking: ${cleanRankingId}, Division: ${cleanDivisionId}`);
-
         const marksPayload = {
             _school: schoolId,
             batchId: [batchId],
             group: groupIds,
-            currentdata: { division_id: cleanDivisionId, ranking_id: cleanRankingId }
+            currentdata: { division_id: DIVISION_ID, ranking_id: RANKING_ID }
         };
-
-        if (studentIdsArray.length > 0) {
-            marksPayload.student_ids = studentIdsArray;
+        if (studentIdsInput) {
+            marksPayload.student_ids = studentIdsInput.split(',');
         }
 
         console.log("📥 Fetching student data...");
-        console.log("https://demoschool-git-mkjan20marksheet-punit-diwans-projects.vercel.app/api/cce_examv1/getMarks");
+        console.log("https://demoschool.edusparsh.com/api/cce_examv1/getMarks");
 
-        const studentResponse = await fetch('https://demoschool-git-mkjan20marksheet-punit-diwans-projects.vercel.app/api/cce_examv1/getMarks', {
+        const studentResponse = await fetch('https://demoschool.edusparsh.com/api/cce_examv1/getMarks', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(marksPayload),
@@ -715,8 +685,8 @@ async function GenerateOdtFile() {
         const studentResponseJson = await studentResponse.json();
         let students = studentResponseJson.students || studentResponseJson.data || [];
 
-        if (studentIdsArray.length > 0) {
-            const requestedStudentIds = new Set(studentIdsArray);
+        if (studentIdsInput) {
+            const requestedStudentIds = new Set(studentIdsInput.split(','));
             students = students.filter(student => student && student.student_id && requestedStudentIds.has(student.student_id));
         }
 
