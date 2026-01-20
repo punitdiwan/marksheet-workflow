@@ -514,6 +514,30 @@ async function GenerateOdtFile() {
         const templateUrl = process.env.TEMPLATE_URL;
         const groupIds = groupid?.split(",");
         const studentIdsInput = process.env.STUDENT_IDS;
+        let studentIdsArray = [];
+
+        if (studentIdsInput) {
+            try {
+                // 1. Try JSON.parse first (Standard flow from Next.js API where data is stringified)
+                const parsed = JSON.parse(studentIdsInput);
+                if (Array.isArray(parsed)) {
+                    studentIdsArray = parsed;
+                } else if (typeof parsed === 'string') {
+                    // Handle case where it might be double stringified or just a string
+                    studentIdsArray = parsed.split(',').map(s => s.trim());
+                }
+            } catch (e) {
+                // 2. Fallback: Split by comma (Manual trigger or legacy flow)
+                // Remove brackets/quotes just in case the raw string looks like '["id"]' but failed parse
+                const cleaned = studentIdsInput.replace(/[\[\]"]/g, '');
+                if (cleaned.trim()) {
+                    studentIdsArray = cleaned.split(',').map(s => s.trim()).filter(Boolean);
+                }
+            }
+        }
+        console.log(`DEBUG: Parsed Student IDs count: ${studentIdsArray.length}`);
+        // --- END UPDATED ---
+
         // --- IMPROVED: Safely parse TEMPLATE_HEADER with better error handling ---
         let templateHeader = {
             show_header: true,
@@ -673,8 +697,9 @@ async function GenerateOdtFile() {
             group: groupIds,
             currentdata: { division_id: cleanDivisionId, ranking_id: cleanRankingId }
         };
-        if (studentIdsInput) {
-            marksPayload.student_ids = studentIdsInput.split(',');
+
+        if (studentIdsArray.length > 0) {
+            marksPayload.student_ids = studentIdsArray;
         }
 
         console.log("📥 Fetching student data...");
@@ -690,8 +715,8 @@ async function GenerateOdtFile() {
         const studentResponseJson = await studentResponse.json();
         let students = studentResponseJson.students || studentResponseJson.data || [];
 
-        if (studentIdsInput) {
-            const requestedStudentIds = new Set(studentIdsInput.split(','));
+        if (studentIdsArray.length > 0) {
+            const requestedStudentIds = new Set(studentIdsArray);
             students = students.filter(student => student && student.student_id && requestedStudentIds.has(student.student_id));
         }
 
