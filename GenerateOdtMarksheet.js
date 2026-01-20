@@ -662,11 +662,16 @@ async function GenerateOdtFile() {
             console.warn(`⚠️ School logo not found or invalid.`);
         }
 
+        const cleanRankingId = (RANKING_ID === 'null' || RANKING_ID === '') ? null : RANKING_ID;
+        const cleanDivisionId = (DIVISION_ID === 'null' || DIVISION_ID === '') ? null : DIVISION_ID;
+
+        console.log(`DEBUG: Sending Payload with - Ranking: ${cleanRankingId}, Division: ${cleanDivisionId}`);
+
         const marksPayload = {
             _school: schoolId,
             batchId: [batchId],
             group: groupIds,
-            currentdata: { division_id: DIVISION_ID, ranking_id: RANKING_ID }
+            currentdata: { division_id: cleanDivisionId, ranking_id: cleanRankingId }
         };
         if (studentIdsInput) {
             marksPayload.student_ids = studentIdsInput.split(',');
