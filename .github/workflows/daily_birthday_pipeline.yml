@@ -61,12 +61,6 @@ jobs:
           else
             echo "✅ FB_USER_ACCESS_TOKEN secret is set."
           fi
-          if [ -z "${{ secrets.DB_PASSWORD }}" ]; then
-            echo "❌ DB_PASSWORD secret is NOT set."
-          else
-            echo "✅ DB_PASSWORD secret is set."
-          fi
-
       # 7️⃣ Run the birthday poster generator for all schools
       - name: Run Birthday Poster Generator
         env:
@@ -81,24 +75,15 @@ jobs:
           export DB_USER="postgres"
 
           echo "🎂 Starting birthday pipeline for all schools..."
-          mkdir -p outputs
 
-          while IFS= read -r SCHOOL_ID; do
-            if [ -z "$SCHOOL_ID" ]; then continue; fi
-            echo "--------------------------------------------------"
-            echo "🏫 Processing school: $SCHOOL_ID"
-            echo "--------------------------------------------------"
-            export SCHOOL_ID="$SCHOOL_ID"
-            python main.py --run_birthday_pipeline || echo "❌ Failed for $SCHOOL_ID"
-            echo ""
-          done < ../project.txt
+          python main.py --run_birthday_pipeline --schools_list ../project.txt
 
-
-
-      # 8️⃣ Upload outputs as artifact (optional)
-      - name: Upload Outputs
+      # 8️⃣ Upload Artifacts (Failures Log + Images)
+      - name: Upload Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: birthday-posts
-          path: python-birthday-reminder/outputs/
+          name: school-processing-results
+          path: |
+            python-birthday-reminder/birthday-posts/
+            python-birthday-reminder/school-failures.json
