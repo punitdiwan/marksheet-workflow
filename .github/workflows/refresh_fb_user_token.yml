@@ -41,9 +41,10 @@ jobs:
 
           EXPIRES_AT=$(echo "$RESPONSE" | jq -r '.data.expires_at')
 
-          if [ "$EXPIRES_AT" = "null" ]; then
-            echo "❌ Could not read expires_at"
-            exit 1
+          if [ "$EXPIRES_AT" = "0" ]; then
+            echo "✅ Non-expiring token detected — rotation not required"
+            echo "days_left=99999" >> $GITHUB_OUTPUT
+            exit 0
           fi
 
           NOW=$(date +%s)
