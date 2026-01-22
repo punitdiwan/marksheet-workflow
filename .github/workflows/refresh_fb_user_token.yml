@@ -37,7 +37,7 @@ jobs:
           RESPONSE=$(curl -s \
             "https://graph.facebook.com/debug_token?input_token=${FB_USER_ACCESS_TOKEN}&access_token=${APP_ACCESS_TOKEN}")
 
-          echo "Debug response received"
+          echo "$RESPONSE" | jq '.data | {is_valid, expires_at, issued_at, type}'
 
           EXPIRES_AT=$(echo "$RESPONSE" | jq -r '.data.expires_at')
 
