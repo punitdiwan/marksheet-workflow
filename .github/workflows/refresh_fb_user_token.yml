@@ -1,4 +1,4 @@
-name: Rotate Facebook User Access Token
+name: Refresh Facebook User Access Token
 
 on:
   schedule:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  rotate-token:
+  refresh-token:
     runs-on: ubuntu-latest
 
     steps:
