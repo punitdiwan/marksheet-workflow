@@ -2,7 +2,7 @@ name: Refresh Facebook User Access Token
 
 on:
   schedule:
-    - cron: "0 2 * * *"
+    - cron: "30 4 1,16 * *"
   workflow_dispatch:
 
 permissions:
