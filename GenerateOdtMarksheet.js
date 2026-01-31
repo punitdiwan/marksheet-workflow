@@ -763,6 +763,14 @@ async function GenerateOdtFile() {
         for (let i = 0; i < students.length; i++) {
             const student = students[i];
             let transformedData = cleanData(transformedStudents[i]);
+
+            Object.keys(transformedData).forEach(key => {
+                if (key.includes('&')) {
+                    const safeKey = key.replace(/&/g, '_');
+                    transformedData[safeKey] = transformedData[key];
+                }
+            });
+
             console.log(`\n--- 📝 Processing student: ${student.full_name} (${i + 1}/${students.length}) ---`);
 
             const modifiedOdtPath = await replaceImageInOdt(templatePath, student, schoolDetails, tempDir);
