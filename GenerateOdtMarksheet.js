@@ -18,7 +18,13 @@ carbone.formatters.showWithLabel = function (value, label) {
 
 // --- NEW: CO-SCHOLASTIC GRADE FORMATTER ---
 carbone.formatters.coGrade = function (coScholastic, subjectName, groupCode) {
-    if (!Array.isArray(coScholastic)) return "";
+    // 1. Debug Log: Check if function is called
+    console.log(`DEBUG: coGrade called for Subject: "${subjectName}", Group: "${groupCode}"`);
+
+    if (!Array.isArray(coScholastic)) {
+        console.log("DEBUG: coScholastic is not an array or is empty.");
+        return "";
+    }
 
     const targetName = String(subjectName).trim().toLowerCase();
 
@@ -28,9 +34,14 @@ carbone.formatters.coGrade = function (coScholastic, subjectName, groupCode) {
             .toLowerCase() === targetName
     );
 
-    if (!subject) return "";
+    if (!subject) {
+        console.log(`DEBUG: Subject "${targetName}" not found in list.`);
+        return "";
+    }
 
-    return subject.groups?.[groupCode]?.grade ?? "";
+    const result = subject.groups?.[groupCode]?.grade ?? "";
+    console.log(`DEBUG: Found grade: "${result}"`);
+    return result;
 };
 // --- END OF NEW FORMATTER ---
 
