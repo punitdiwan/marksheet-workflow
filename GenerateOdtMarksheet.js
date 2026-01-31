@@ -16,6 +16,21 @@ carbone.formatters.showWithLabel = function (value, label) {
 };
 // --- END OF NEW FORMATTER ---
 
+// --- NEW: CO-SCHOLASTIC GRADE FORMATTER ---
+carbone.formatters.coGrade = function (coScholastic, subjectName, groupCode) {
+    if (!Array.isArray(coScholastic)) return "";
+
+    const subject = coScholastic.find(
+        s => String(s.name).toLowerCase() === String(subjectName).toLowerCase()
+    );
+
+    if (!subject) return "";
+
+    return subject.groups?.[groupCode]?.grade ?? "";
+};
+// --- END FORMATTER ---
+
+
 
 const FormData = require('form-data');
 const yauzl = require('yauzl');
