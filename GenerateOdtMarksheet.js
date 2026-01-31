@@ -20,15 +20,19 @@ carbone.formatters.showWithLabel = function (value, label) {
 carbone.formatters.coGrade = function (coScholastic, subjectName, groupCode) {
     if (!Array.isArray(coScholastic)) return "";
 
-    const subject = coScholastic.find(
-        s => String(s.name).toLowerCase() === String(subjectName).toLowerCase()
+    const targetName = String(subjectName).trim().toLowerCase();
+
+    const subject = coScholastic.find(s =>
+        String(s.name || "")
+            .trim()
+            .toLowerCase() === targetName
     );
 
     if (!subject) return "";
 
     return subject.groups?.[groupCode]?.grade ?? "";
 };
-// --- END FORMATTER ---
+// --- END OF NEW FORMATTER ---
 
 
 
