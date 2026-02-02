@@ -376,17 +376,14 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         console.log(`✅ Unzipped template for ${student.full_name} to ${studentDir}`);
     } catch (err) {
         console.error(`❌ Failed to unzip template for ${student.full_name}:`, err);
-        return templatePath; // Return original if unzip fails
+        return templatePath;
     }
 
     const contentXmlPath = path.join(studentDir, 'content.xml');
     const picturesDir = path.join(studentDir, 'Pictures');
-    await fs.mkdir(picturesDir, { recursive: true }); // Ensure Pictures directory exists
+    await fs.mkdir(picturesDir, { recursive: true });
 
-    // --- NEW: UNIFIED AND NAME-BASED IMAGE REPLACEMENT LOGIC ---
-
-    // Define the images we want to replace by their frame name in the ODT
-    // and where to find their new URL in our data.
+    // Define replacements
     const imageReplacements = [
         {
             frameName: 'Logo',
@@ -402,71 +399,66 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
     if (schoolDetails.signatures && typeof schoolDetails.signatures === 'object') {
         for (const key in schoolDetails.signatures) {
-            if (Object.prototype.hasOwnProperty.call(schoolDetails.signatures, key)) {
-                const signatureInfo = schoolDetails.signatures[key];
-                if (signatureInfo && signatureInfo.url) {
-                    imageReplacements.push({
-                        frameName: key,
-                        url: signatureInfo.url,
-                        description: signatureInfo.name || `Signature ${key}`
-                    });
-                }
-            }
+            const sig = schoolDetails.signatures[key];
+            if (sig && sig.url) imageReplacements.push({ frameName: key, url: sig.url, description: sig.name || key });
         }
     }
 
+    // Read content.xml as text ONCE
+    let contentXmlContent = await fs.readFile(contentXmlPath, 'utf-8');
     let anyImageReplaced = false;
 
-    // Process each potential image replacement
     for (const replacement of imageReplacements) {
         const { frameName, url, description } = replacement;
 
-        if (!url || !String(url).startsWith("http")) {
-            // console.log(`ℹ️ Skipping ${description} (${frameName}): No valid URL provided.`);
+        if (!url || !String(url).startsWith("http")) continue;
+
+        // Create a Regex to find this specific frame's image reference
+        // Matches: <draw:frame ... draw:name="Logo" ...> ... <draw:image ... xlink:href="..."
+        const frameRegex = new RegExp(`(<draw:frame[^>]*draw:name="${frameName}"[^>]*>[\\s\\S]*?<draw:image[^>]*xlink:href=")([^"]+)(")`);
+
+        if (!frameRegex.test(contentXmlContent)) {
+            // console.log(`ℹ️ Frame "${frameName}" not found in XML.`);
             continue;
         }
 
-        const targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName);
-        if (!targetFilename) {
-            // console.log(`ℹ️ Skipping ${description} (${frameName}): Frame not found in the template.`);
-            continue;
-        }
-
-        console.log(`➡️  Mapping frame "${frameName}" to file "${targetFilename}" for replacement.`);
+        console.log(`➡️  Processing image: ${description} (${frameName})`);
 
         const imageBuffer = await fetchImage(url);
         if (!imageBuffer) {
-            console.warn(`⚠️ Failed to fetch image for ${description} from ${url}. Skipping replacement.`);
+            console.warn(`⚠️ Failed to fetch image for ${description}.`);
             continue;
         }
 
+        // 1. Save as a UNIQUE file name to break the link between shared images
+        const uniqueFileName = `${frameName}_${Date.now()}.png`;
+        const newImagePath = path.join(picturesDir, uniqueFileName);
+
         try {
-            const imagePath = path.join(picturesDir, targetFilename);
-            await fs.writeFile(imagePath, imageBuffer);
-            console.log(`✅ Replaced ${description} (${frameName})`);
+            await fs.writeFile(newImagePath, imageBuffer);
+
+            // 2. Update content.xml to point ONLY this frame to the new unique file
+            contentXmlContent = contentXmlContent.replace(frameRegex, `$1Pictures/${uniqueFileName}$3`);
+
+            console.log(`✅ Replaced and linked new file for ${description}`);
             anyImageReplaced = true;
         } catch (writeError) {
-            console.error(`❌ Failed to write new image for ${description} to ${targetFilename}:`, writeError);
+            console.error(`❌ Failed to write image or update XML for ${frameName}:`, writeError);
         }
     }
 
     if (anyImageReplaced) {
-        try {
-            await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
-            console.log(`✅ Formatted content.xml for ${student.full_name}`);
-        } catch (err) {
-            console.warn(`⚠️ xmllint formatting failed: ${err.message}. Using unformatted content.xml.`);
-        }
-    } else {
-        console.log(`ℹ️ No images were replaced for ${student.full_name}.`);
+        await fs.writeFile(contentXmlPath, contentXmlContent);
+        // Optional: Run xmllint if needed, though strictly replacing paths usually doesn't break validity
+        try { await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`); } catch (e) { }
+        console.log(`✅ Updated content.xml for ${student.full_name}`);
     }
 
-    // --- END OF NEW LOGIC ---
-
-    // Re-zip to create new ODT
+    // Re-zip to create new ODT (Standard logic)
     const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id;
     const newOdtPath = path.join(tempDir, `${safeName}.odt`);
     const zip = new yazl.ZipFile();
+
     const walkDir = async (dir, zipPath = '') => {
         const files = await fs.readdir(dir);
         for (const file of files) {
@@ -490,15 +482,9 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             writeStream.on('error', reject);
             zip.end();
         });
-        console.log(`✅ Zipped new ODT for ${student.full_name} at ${newOdtPath}`);
-
-        const fileExists = await waitForFile(newOdtPath);
-        if (!fileExists) {
-            throw new Error(`File ${newOdtPath} was not created or accessible after zipping`);
-        }
         return newOdtPath;
     } catch (err) {
-        console.error(`❌ Failed to re-zip ODT for ${student.full_name}:`, err);
+        console.error(`❌ Failed to re-zip ODT:`, err);
         return templatePath;
     }
 }
