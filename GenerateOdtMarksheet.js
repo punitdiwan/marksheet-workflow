@@ -376,17 +376,41 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         console.log(`✅ Unzipped template for ${student.full_name} to ${studentDir}`);
     } catch (err) {
         console.error(`❌ Failed to unzip template for ${student.full_name}:`, err);
-        return templatePath; // Return original if unzip fails
+        return templatePath;
     }
 
     const contentXmlPath = path.join(studentDir, 'content.xml');
+    const stylesXmlPath = path.join(studentDir, 'styles.xml'); // NEW: Path to styles.xml
     const picturesDir = path.join(studentDir, 'Pictures');
-    await fs.mkdir(picturesDir, { recursive: true }); // Ensure Pictures directory exists
+    await fs.mkdir(picturesDir, { recursive: true });
 
-    // --- NEW: UNIFIED AND NAME-BASED IMAGE REPLACEMENT LOGIC ---
+    // 1. Read content.xml and styles.xml
+    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+    let stylesXml = null;
+    try {
+        stylesXml = await fs.readFile(stylesXmlPath, 'utf-8');
+    } catch (e) {
+        // styles.xml might not exist in some simple ODTs, ignore error
+    }
 
-    // Define the images we want to replace by their frame name in the ODT
-    // and where to find their new URL in our data.
+    // --- FIX START: FORCE LEFT ALIGNMENT IN BOTH FILES ---
+    // This replaces "Justified" with "Left" to prevent spacing issues like "D I S E  C O D E"
+    const fixJustify = (xml) => {
+        if (!xml) return xml;
+        return xml.replace(/fo:text-align="justify"/g, 'fo:text-align="left"');
+    };
+
+    contentXml = fixJustify(contentXml);
+    if (stylesXml) {
+        const fixedStyles = fixJustify(stylesXml);
+        if (fixedStyles !== stylesXml) {
+            await fs.writeFile(stylesXmlPath, fixedStyles);
+            console.log("✅ Fixed justified text alignment in styles.xml");
+        }
+    }
+    // --- FIX END ---
+
+    // Define images to replace
     const imageReplacements = [
         {
             frameName: 'Logo',
@@ -404,7 +428,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         for (const key in schoolDetails.signatures) {
             if (Object.prototype.hasOwnProperty.call(schoolDetails.signatures, key)) {
                 const signatureInfo = schoolDetails.signatures[key];
-                if (signatureInfo && signatureInfo.url) {
+                if (signatureInfo?.url) {
                     imageReplacements.push({
                         frameName: key,
                         url: signatureInfo.url,
@@ -415,104 +439,61 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         }
     }
 
-    // 1. Read content.xml (Contains the layout and references to images)
-    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-
-    contentXml = contentXml.replace(/fo:text-align="justify"/g, 'fo:text-align="left"');
-
-    // 2. Read manifest.xml (REQUIRED: Must list all files in the ODT)
-    const manifestPath = path.join(studentDir, 'META-INF', 'manifest.xml');
-    let manifestXml = '';
-    try {
-        manifestXml = await fs.readFile(manifestPath, 'utf-8');
-    } catch (e) {
-        console.warn('⚠️ Could not read manifest.xml. ODT structure might be unexpected.');
-    }
-
     let anyImageReplaced = false;
     let newManifestEntries = [];
 
-    // Process each potential image replacement
+    // Process image replacements
     for (const replacement of imageReplacements) {
         const { frameName, url, description } = replacement;
+        if (!url || !String(url).startsWith("http")) continue;
 
-        if (!url || !String(url).startsWith("http")) {
-            continue;
-        }
-
-        // Regex to find the specific frame and its internal image reference
-        // Matches: <draw:frame ... draw:name="FrameName" ... > ... <draw:image ... xlink:href="..."
         const frameRegex = new RegExp(`(<draw:frame[^>]*draw:name="${frameName}"[\\s\\S]*?<draw:image[^>]*xlink:href=")([^"]+)(")`, 'i');
 
-        if (!frameRegex.test(contentXml)) {
-            // console.log(`ℹ️ Skipping ${description} (${frameName}): Frame not found in template.`);
-            continue;
-        }
+        if (frameRegex.test(contentXml)) {
+            console.log(`➡️  Processing image for frame "${frameName}"...`);
+            const imageBuffer = await fetchImage(url);
 
-        console.log(`➡️  Processing image for frame "${frameName}"...`);
-
-        const imageBuffer = await fetchImage(url);
-        if (!imageBuffer) {
-            console.warn(`⚠️ Failed to fetch image for ${description} from ${url}.`);
-            continue;
-        }
-
-        // Create a unique filename based on the frame name to prevent overwriting shared images
-        const newFilename = `${frameName.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
-        const imagePath = path.join(picturesDir, newFilename);
-
-        try {
-            // 1. Write the new image file to Pictures/ directory
-            await fs.writeFile(imagePath, imageBuffer);
-
-            // 2. Update the XML to point to this new file
-            // ODT references usually look like "Pictures/Filename.png"
-            contentXml = contentXml.replace(frameRegex, `$1Pictures/${newFilename}$3`);
-
-            // 3. Prepare entry for manifest.xml
-            // Required format: <manifest:file-entry manifest:full-path="Pictures/Name.png" manifest:media-type="image/png"/>
-            newManifestEntries.push(`<manifest:file-entry manifest:full-path="Pictures/${newFilename}" manifest:media-type="image/png"/>`);
-
-            console.log(`✅ Replaced ${description} (${frameName}) with new file: ${newFilename}`);
-            anyImageReplaced = true;
-        } catch (writeError) {
-            console.error(`❌ Failed to write new image for ${description}:`, writeError);
-        }
-    }
-
-    if (anyImageReplaced) {
-        try {
-            // Save the modified content.xml
-            await fs.writeFile(contentXmlPath, contentXml);
-
-            // Update manifest.xml if we have new entries and the file exists
-            if (manifestXml && newManifestEntries.length > 0) {
-                const closingTag = '</manifest:manifest>';
-                if (manifestXml.includes(closingTag)) {
-                    // Inject new entries before the closing tag
-                    const insertion = newManifestEntries.join('\n');
-                    manifestXml = manifestXml.replace(closingTag, `${insertion}\n${closingTag}`);
-                    await fs.writeFile(manifestPath, manifestXml);
-                    console.log(`✅ Updated manifest.xml with ${newManifestEntries.length} new image entries.`);
-                } else {
-                    console.warn("⚠️ manifest.xml closing tag not found. Skipping manifest update (PDF gen might fail).");
+            if (imageBuffer) {
+                const newFilename = `${frameName.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+                const imagePath = path.join(picturesDir, newFilename);
+                try {
+                    await fs.writeFile(imagePath, imageBuffer);
+                    contentXml = contentXml.replace(frameRegex, `$1Pictures/${newFilename}$3`);
+                    newManifestEntries.push(`<manifest:file-entry manifest:full-path="Pictures/${newFilename}" manifest:media-type="image/png"/>`);
+                    console.log(`✅ Replaced ${description} (${frameName}) with: ${newFilename}`);
+                    anyImageReplaced = true;
+                } catch (writeError) {
+                    console.error(`❌ Failed to write new image for ${description}:`, writeError);
                 }
+            } else {
+                console.warn(`⚠️ Failed to fetch image for ${description} from ${url}.`);
             }
-
-            // Optional: Format XML if xmllint is available (helps with debugging, not strictly required)
-            await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`).catch(() => { });
-
-        } catch (err) {
-            console.warn(`⚠️ Error saving ODT XML files: ${err.message}`);
         }
-    } else {
-        console.log(`ℹ️ No images were replaced for ${student.full_name}.`);
-        await fs.writeFile(contentXmlPath, contentXml);
     }
 
-    // --- END OF NEW LOGIC ---
+    // Always write content.xml back (because we applied the text alignment fix)
+    try {
+        await fs.writeFile(contentXmlPath, contentXml);
 
-    // Re-zip to create new ODT
+        // Update manifest only if we added new images
+        if (anyImageReplaced && newManifestEntries.length > 0) {
+            const manifestPath = path.join(studentDir, 'META-INF', 'manifest.xml');
+            let manifestXml = await fs.readFile(manifestPath, 'utf-8').catch(() => '');
+            if (manifestXml && manifestXml.includes('</manifest:manifest>')) {
+                manifestXml = manifestXml.replace('</manifest:manifest>', `${newManifestEntries.join('\n')}\n</manifest:manifest>`);
+                await fs.writeFile(manifestPath, manifestXml);
+                console.log(`✅ Updated manifest.xml`);
+            }
+        }
+
+        // Optional format check
+        await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`).catch(() => { });
+
+    } catch (err) {
+        console.warn(`⚠️ Error saving ODT XML files: ${err.message}`);
+    }
+
+    // Re-zip
     const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id;
     const newOdtPath = path.join(tempDir, `${safeName}.odt`);
     const zip = new yazl.ZipFile();
@@ -539,13 +520,11 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             writeStream.on('error', reject);
             zip.end();
         });
-        console.log(`✅ Zipped new ODT for ${student.full_name} at ${newOdtPath}`);
 
-        const fileExists = await waitForFile(newOdtPath);
-        if (!fileExists) {
-            throw new Error(`File ${newOdtPath} was not created or accessible after zipping`);
+        if (await waitForFile(newOdtPath)) {
+            return newOdtPath;
         }
-        return newOdtPath;
+        throw new Error(`File not created.`);
     } catch (err) {
         console.error(`❌ Failed to re-zip ODT for ${student.full_name}:`, err);
         return templatePath;
