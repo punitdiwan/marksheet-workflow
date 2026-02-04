@@ -414,8 +414,6 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             }
         }
     }
-    const usedPictureFiles = new Set();
-
 
     let anyImageReplaced = false;
 
@@ -443,36 +441,10 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         }
 
         try {
-            let finalFilename = targetFilename;
-
-            // If another frame already used this file,
-            // create a new filename and update content.xml
-            if (usedPictureFiles.has(targetFilename)) {
-                const ext = path.extname(targetFilename);
-                const base = path.basename(targetFilename, ext);
-                finalFilename = `${base}_${frameName}${ext}`;
-
-                const contentXml = await fs.readFile(contentXmlPath, "utf-8");
-
-                const updatedXml = contentXml.replace(
-                    new RegExp(
-                        `(draw:name="${frameName}"[\\s\\S]*?xlink:href="Pictures/)${targetFilename}"`,
-                        "m"
-                    ),
-                    `$1${finalFilename}"`
-                );
-
-                await fs.writeFile(contentXmlPath, updatedXml);
-            }
-
-            const imagePath = path.join(picturesDir, finalFilename);
+            const imagePath = path.join(picturesDir, targetFilename);
             await fs.writeFile(imagePath, imageBuffer);
-
-            usedPictureFiles.add(finalFilename);
-
             console.log(`✅ Replaced ${description} (${frameName})`);
             anyImageReplaced = true;
-
         } catch (writeError) {
             console.error(`❌ Failed to write new image for ${description} to ${targetFilename}:`, writeError);
         }
@@ -920,7 +892,3 @@ async function GenerateOdtFile() {
 
 // --- EXECUTION ---
 GenerateOdtFile();
-
-// in this when we have 2 images in the templete for logo and student images with proper frame name but in the generated marksheet we have student images only 
-// in the generated marksheet and logo has been also replaced with student image FIX IT SO THAT WE GET STUDENT IMAGES IN STUDENT FRAME AND LOGO IN LOGO FRAME
-// AND I WANT IT WITH MINIMUM CODE CHANGES
