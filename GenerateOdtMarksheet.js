@@ -426,7 +426,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             continue;
         }
 
-        const targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName);
+        let targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName);
         if (!targetFilename) {
             // console.log(`ℹ️ Skipping ${description} (${frameName}): Frame not found in the template.`);
             continue;
@@ -441,12 +441,31 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         }
 
         try {
-            const imagePath = path.join(picturesDir, targetFilename);
+            let imagePath = path.join(picturesDir, targetFilename);
+
+            // --- FIX: ensure frames don't share same file ---
+            const stats = await fs.stat(imagePath).catch(() => null);
+            if (stats) {
+                const ext = path.extname(targetFilename);
+                const base = path.basename(targetFilename, ext);
+                targetFilename = `${base}_${frameName}${ext}`;
+                imagePath = path.join(picturesDir, targetFilename);
+
+                // update reference in content.xml
+                let xml = await fs.readFile(contentXmlPath, 'utf8');
+                xml = xml.replace(
+                    new RegExp(`(<draw:frame[^>]*draw:name="${frameName}"[\\s\\S]*?xlink:href=")Pictures\\/[^"]+(")`, 'm'),
+                    `$1Pictures/${targetFilename}$2`
+                );
+                await fs.writeFile(contentXmlPath, xml);
+            }
+            // --- END FIX ---
+
             await fs.writeFile(imagePath, imageBuffer);
             console.log(`✅ Replaced ${description} (${frameName})`);
             anyImageReplaced = true;
         } catch (writeError) {
-            console.error(`❌ Failed to write new image for ${description} to ${targetFilename}:`, writeError);
+            console.error(`❌ Failed to write new image for ${description}:`, writeError);
         }
     }
 
