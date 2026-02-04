@@ -345,7 +345,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     const studentDir = path.join(tempDir, `student_${student.student_id}`);
     await fs.mkdir(studentDir, { recursive: true });
 
-    // Unzip ODT
+    // ---------- UNZIP TEMPLATE ----------
     const unzipPromise = new Promise((resolve, reject) => {
         yauzl.open(templatePath, { lazyEntries: true }, (err, zipfile) => {
             if (err) return reject(err);
@@ -366,7 +366,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
                     });
                 }
             });
-            zipfile.on('end', () => resolve());
+            zipfile.on('end', resolve);
             zipfile.on('error', reject);
         });
     });
@@ -375,18 +375,15 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         await unzipPromise;
         console.log(`✅ Unzipped template for ${student.full_name} to ${studentDir}`);
     } catch (err) {
-        console.error(`❌ Failed to unzip template for ${student.full_name}:`, err);
-        return templatePath; // Return original if unzip fails
+        console.error(`❌ Failed to unzip template:`, err);
+        return templatePath;
     }
 
     const contentXmlPath = path.join(studentDir, 'content.xml');
     const picturesDir = path.join(studentDir, 'Pictures');
-    await fs.mkdir(picturesDir, { recursive: true }); // Ensure Pictures directory exists
+    await fs.mkdir(picturesDir, { recursive: true });
 
-    // --- NEW: UNIFIED AND NAME-BASED IMAGE REPLACEMENT LOGIC ---
-
-    // Define the images we want to replace by their frame name in the ODT
-    // and where to find their new URL in our data.
+    // ---------- IMAGE REPLACEMENT CONFIG ----------
     const imageReplacements = [
         {
             frameName: 'Logo',
@@ -402,87 +399,68 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
     if (schoolDetails.signatures && typeof schoolDetails.signatures === 'object') {
         for (const key in schoolDetails.signatures) {
-            if (Object.prototype.hasOwnProperty.call(schoolDetails.signatures, key)) {
-                const signatureInfo = schoolDetails.signatures[key];
-                if (signatureInfo && signatureInfo.url) {
-                    imageReplacements.push({
-                        frameName: key,
-                        url: signatureInfo.url,
-                        description: signatureInfo.name || `Signature ${key}`
-                    });
-                }
+            const signatureInfo = schoolDetails.signatures[key];
+            if (signatureInfo?.url) {
+                imageReplacements.push({
+                    frameName: key,
+                    url: signatureInfo.url,
+                    description: signatureInfo.name || key
+                });
             }
         }
     }
 
     let anyImageReplaced = false;
+    const usedImages = new Set(); // <-- FIX
 
-    // Process each potential image replacement
+    // ---------- PROCESS IMAGES ----------
     for (const replacement of imageReplacements) {
         const { frameName, url, description } = replacement;
 
-        if (!url || !String(url).startsWith("http")) {
-            // console.log(`ℹ️ Skipping ${description} (${frameName}): No valid URL provided.`);
-            continue;
-        }
+        if (!url || !String(url).startsWith("http")) continue;
 
-        let targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName);
-        if (!targetFilename) {
-            // console.log(`ℹ️ Skipping ${description} (${frameName}): Frame not found in the template.`);
-            continue;
-        }
+        let targetFilename = await findImageFilename(
+            contentXmlPath,
+            picturesDir,
+            frameName
+        );
 
-        console.log(`➡️  Mapping frame "${frameName}" to file "${targetFilename}" for replacement.`);
+        if (!targetFilename) continue;
+
+        console.log(`➡️ Replacing ${description} (${frameName})`);
 
         const imageBuffer = await fetchImage(url);
-        if (!imageBuffer) {
-            console.warn(`⚠️ Failed to fetch image for ${description} from ${url}. Skipping replacement.`);
-            continue;
+        if (!imageBuffer) continue;
+
+        let imagePath = path.join(picturesDir, targetFilename);
+
+        // ---- FIX: avoid shared image files ----
+        if (usedImages.has(targetFilename)) {
+            const ext = path.extname(targetFilename);
+            const base = path.basename(targetFilename, ext);
+            targetFilename = `${base}_${frameName}${ext}`;
+            imagePath = path.join(picturesDir, targetFilename);
         }
+        // ---------------------------------------
 
         try {
-            let imagePath = path.join(picturesDir, targetFilename);
-
-            // --- FIX: ensure frames don't share same file ---
-            const stats = await fs.stat(imagePath).catch(() => null);
-            if (stats) {
-                const ext = path.extname(targetFilename);
-                const base = path.basename(targetFilename, ext);
-                targetFilename = `${base}_${frameName}${ext}`;
-                imagePath = path.join(picturesDir, targetFilename);
-
-                // update reference in content.xml
-                let xml = await fs.readFile(contentXmlPath, 'utf8');
-                xml = xml.replace(
-                    new RegExp(`(<draw:frame[^>]*draw:name="${frameName}"[\\s\\S]*?xlink:href=")Pictures\\/[^"]+(")`, 'm'),
-                    `$1Pictures/${targetFilename}$2`
-                );
-                await fs.writeFile(contentXmlPath, xml);
-            }
-            // --- END FIX ---
-
             await fs.writeFile(imagePath, imageBuffer);
-            console.log(`✅ Replaced ${description} (${frameName})`);
+            usedImages.add(targetFilename);
             anyImageReplaced = true;
-        } catch (writeError) {
-            console.error(`❌ Failed to write new image for ${description}:`, writeError);
+        } catch (err) {
+            console.error(`❌ Failed writing image:`, err);
         }
     }
 
     if (anyImageReplaced) {
         try {
             await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
-            console.log(`✅ Formatted content.xml for ${student.full_name}`);
-        } catch (err) {
-            console.warn(`⚠️ xmllint formatting failed: ${err.message}. Using unformatted content.xml.`);
+        } catch {
+            console.warn(`⚠️ xmllint formatting skipped.`);
         }
-    } else {
-        console.log(`ℹ️ No images were replaced for ${student.full_name}.`);
     }
 
-    // --- END OF NEW LOGIC ---
-
-    // Re-zip to create new ODT
+    // ---------- REZIP ----------
     const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id;
     const newOdtPath = path.join(tempDir, `${safeName}.odt`);
     const zip = new yazl.ZipFile();
@@ -511,13 +489,10 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         });
         console.log(`✅ Zipped new ODT for ${student.full_name} at ${newOdtPath}`);
 
-        const fileExists = await waitForFile(newOdtPath);
-        if (!fileExists) {
-            throw new Error(`File ${newOdtPath} was not created or accessible after zipping`);
-        }
+        await waitForFile(newOdtPath);
         return newOdtPath;
     } catch (err) {
-        console.error(`❌ Failed to re-zip ODT for ${student.full_name}:`, err);
+        console.error(`❌ Failed to re-zip ODT:`, err);
         return templatePath;
     }
 }
