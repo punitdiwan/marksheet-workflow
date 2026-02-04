@@ -345,22 +345,26 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     const studentDir = path.join(tempDir, `student_${student.student_id}`);
     await fs.mkdir(studentDir, { recursive: true });
 
-    // ---------- UNZIP TEMPLATE ----------
+    // -------- UNZIP --------
     const unzipPromise = new Promise((resolve, reject) => {
         yauzl.open(templatePath, { lazyEntries: true }, (err, zipfile) => {
             if (err) return reject(err);
             zipfile.readEntry();
             zipfile.on('entry', async (entry) => {
                 const entryPath = path.join(studentDir, entry.fileName);
+
                 if (/\/$/.test(entry.fileName)) {
                     await fs.mkdir(entryPath, { recursive: true });
                     zipfile.readEntry();
                 } else {
                     zipfile.openReadStream(entry, async (err, readStream) => {
                         if (err) return reject(err);
+
                         await fs.mkdir(path.dirname(entryPath), { recursive: true });
+
                         const writeStream = require('fs').createWriteStream(entryPath);
                         readStream.pipe(writeStream);
+
                         readStream.on('end', () => zipfile.readEntry());
                         readStream.on('error', reject);
                     });
@@ -373,9 +377,8 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
     try {
         await unzipPromise;
-        console.log(`✅ Unzipped template for ${student.full_name} to ${studentDir}`);
     } catch (err) {
-        console.error(`❌ Failed to unzip template:`, err);
+        console.error(`❌ Unzip failed`, err);
         return templatePath;
     }
 
@@ -383,7 +386,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     const picturesDir = path.join(studentDir, 'Pictures');
     await fs.mkdir(picturesDir, { recursive: true });
 
-    // ---------- IMAGE REPLACEMENT CONFIG ----------
+    // -------- IMAGE CONFIG --------
     const imageReplacements = [
         {
             frameName: 'Logo',
@@ -397,29 +400,28 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         }
     ];
 
-    if (schoolDetails.signatures && typeof schoolDetails.signatures === 'object') {
+    if (schoolDetails.signatures) {
         for (const key in schoolDetails.signatures) {
-            const signatureInfo = schoolDetails.signatures[key];
-            if (signatureInfo?.url) {
+            const sig = schoolDetails.signatures[key];
+            if (sig?.url) {
                 imageReplacements.push({
                     frameName: key,
-                    url: signatureInfo.url,
-                    description: signatureInfo.name || key
+                    url: sig.url,
+                    description: key
                 });
             }
         }
     }
 
     let anyImageReplaced = false;
-    const usedImages = new Set(); // <-- FIX
 
-    // ---------- PROCESS IMAGES ----------
+    // -------- IMAGE REPLACEMENT --------
     for (const replacement of imageReplacements) {
         const { frameName, url, description } = replacement;
 
-        if (!url || !String(url).startsWith("http")) continue;
+        if (!url || !url.startsWith('http')) continue;
 
-        let targetFilename = await findImageFilename(
+        const targetFilename = await findImageFilename(
             contentXmlPath,
             picturesDir,
             frameName
@@ -427,28 +429,17 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
         if (!targetFilename) continue;
 
-        console.log(`➡️ Replacing ${description} (${frameName})`);
-
         const imageBuffer = await fetchImage(url);
         if (!imageBuffer) continue;
 
-        let imagePath = path.join(picturesDir, targetFilename);
-
-        // ---- FIX: avoid shared image files ----
-        if (usedImages.has(targetFilename)) {
-            const ext = path.extname(targetFilename);
-            const base = path.basename(targetFilename, ext);
-            targetFilename = `${base}_${frameName}${ext}`;
-            imagePath = path.join(picturesDir, targetFilename);
-        }
-        // ---------------------------------------
+        const imagePath = path.join(picturesDir, targetFilename);
 
         try {
             await fs.writeFile(imagePath, imageBuffer);
-            usedImages.add(targetFilename);
+            console.log(`✅ Replaced ${description}`);
             anyImageReplaced = true;
         } catch (err) {
-            console.error(`❌ Failed writing image:`, err);
+            console.error(`❌ Failed writing image`, err);
         }
     }
 
@@ -456,20 +447,23 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         try {
             await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
         } catch {
-            console.warn(`⚠️ xmllint formatting skipped.`);
+            console.warn(`⚠️ xmllint skipped`);
         }
     }
 
-    // ---------- REZIP ----------
+    // -------- ZIP BACK --------
     const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id;
     const newOdtPath = path.join(tempDir, `${safeName}.odt`);
+
     const zip = new yazl.ZipFile();
+
     const walkDir = async (dir, zipPath = '') => {
         const files = await fs.readdir(dir);
         for (const file of files) {
             const fullPath = path.join(dir, file);
             const stats = await fs.stat(fullPath);
             const zipEntry = path.join(zipPath, file);
+
             if (stats.isDirectory()) {
                 await walkDir(fullPath, zipEntry);
             } else {
@@ -480,22 +474,24 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
     try {
         await walkDir(studentDir);
+
         const writeStream = require('fs').createWriteStream(newOdtPath);
         zip.outputStream.pipe(writeStream);
+
         await new Promise((resolve, reject) => {
             writeStream.on('finish', resolve);
             writeStream.on('error', reject);
             zip.end();
         });
-        console.log(`✅ Zipped new ODT for ${student.full_name} at ${newOdtPath}`);
 
         await waitForFile(newOdtPath);
         return newOdtPath;
     } catch (err) {
-        console.error(`❌ Failed to re-zip ODT:`, err);
+        console.error(`❌ Rezip failed`, err);
         return templatePath;
     }
 }
+
 
 function cleanData(data) {
     if (data === null || data === undefined || (typeof data === 'number' && isNaN(data))) {
