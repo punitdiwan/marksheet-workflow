@@ -394,7 +394,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             description: 'School Logo'
         },
         {
-            frameName: 'studentImage', // Uppercase S based on your description
+            frameName: 'studentImage',
             url: student.photo,
             description: 'Student Photo'
         }
@@ -415,8 +415,20 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         }
     }
 
+    // 1. Read content.xml (Contains the layout and references to images)
     let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+
+    // 2. Read manifest.xml (REQUIRED: Must list all files in the ODT)
+    const manifestPath = path.join(studentDir, 'META-INF', 'manifest.xml');
+    let manifestXml = '';
+    try {
+        manifestXml = await fs.readFile(manifestPath, 'utf-8');
+    } catch (e) {
+        console.warn('⚠️ Could not read manifest.xml. ODT structure might be unexpected.');
+    }
+
     let anyImageReplaced = false;
+    let newManifestEntries = [];
 
     // Process each potential image replacement
     for (const replacement of imageReplacements) {
@@ -448,12 +460,16 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         const imagePath = path.join(picturesDir, newFilename);
 
         try {
-            // 1. Write the new image file
+            // 1. Write the new image file to Pictures/ directory
             await fs.writeFile(imagePath, imageBuffer);
 
             // 2. Update the XML to point to this new file
-            // This replacement ensures only the specific frame's image reference is changed
+            // ODT references usually look like "Pictures/Filename.png"
             contentXml = contentXml.replace(frameRegex, `$1Pictures/${newFilename}$3`);
+
+            // 3. Prepare entry for manifest.xml
+            // Required format: <manifest:file-entry manifest:full-path="Pictures/Name.png" manifest:media-type="image/png"/>
+            newManifestEntries.push(`<manifest:file-entry manifest:full-path="Pictures/${newFilename}" manifest:media-type="image/png"/>`);
 
             console.log(`✅ Replaced ${description} (${frameName}) with new file: ${newFilename}`);
             anyImageReplaced = true;
@@ -466,11 +482,26 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         try {
             // Save the modified content.xml
             await fs.writeFile(contentXmlPath, contentXml);
-            // Optional: Format XML (ignoring errors if xmllint missing)
+
+            // Update manifest.xml if we have new entries and the file exists
+            if (manifestXml && newManifestEntries.length > 0) {
+                const closingTag = '</manifest:manifest>';
+                if (manifestXml.includes(closingTag)) {
+                    // Inject new entries before the closing tag
+                    const insertion = newManifestEntries.join('\n');
+                    manifestXml = manifestXml.replace(closingTag, `${insertion}\n${closingTag}`);
+                    await fs.writeFile(manifestPath, manifestXml);
+                    console.log(`✅ Updated manifest.xml with ${newManifestEntries.length} new image entries.`);
+                } else {
+                    console.warn("⚠️ manifest.xml closing tag not found. Skipping manifest update (PDF gen might fail).");
+                }
+            }
+
+            // Optional: Format XML if xmllint is available (helps with debugging, not strictly required)
             await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`).catch(() => { });
-            console.log(`✅ Updated content.xml for ${student.full_name}`);
+
         } catch (err) {
-            console.warn(`⚠️ Error saving content.xml: ${err.message}`);
+            console.warn(`⚠️ Error saving ODT XML files: ${err.message}`);
         }
     } else {
         console.log(`ℹ️ No images were replaced for ${student.full_name}.`);
