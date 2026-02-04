@@ -418,6 +418,8 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     // 1. Read content.xml (Contains the layout and references to images)
     let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
 
+    contentXml = contentXml.replace(/fo:text-align="justify"/g, 'fo:text-align="left"');
+
     // 2. Read manifest.xml (REQUIRED: Must list all files in the ODT)
     const manifestPath = path.join(studentDir, 'META-INF', 'manifest.xml');
     let manifestXml = '';
@@ -505,6 +507,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         }
     } else {
         console.log(`ℹ️ No images were replaced for ${student.full_name}.`);
+        await fs.writeFile(contentXmlPath, contentXml);
     }
 
     // --- END OF NEW LOGIC ---
