@@ -394,7 +394,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             description: 'School Logo'
         },
         {
-            frameName: 'studentImage',
+            frameName: 'studentImage', // Uppercase S based on your description
             url: student.photo,
             description: 'Student Photo'
         }
@@ -415,6 +415,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         }
     }
 
+    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
     let anyImageReplaced = false;
 
     // Process each potential image replacement
@@ -422,40 +423,54 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         const { frameName, url, description } = replacement;
 
         if (!url || !String(url).startsWith("http")) {
-            // console.log(`ℹ️ Skipping ${description} (${frameName}): No valid URL provided.`);
             continue;
         }
 
-        const targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName);
-        if (!targetFilename) {
-            // console.log(`ℹ️ Skipping ${description} (${frameName}): Frame not found in the template.`);
+        // Regex to find the specific frame and its internal image reference
+        // Matches: <draw:frame ... draw:name="FrameName" ... > ... <draw:image ... xlink:href="..."
+        const frameRegex = new RegExp(`(<draw:frame[^>]*draw:name="${frameName}"[\\s\\S]*?<draw:image[^>]*xlink:href=")([^"]+)(")`, 'i');
+
+        if (!frameRegex.test(contentXml)) {
+            // console.log(`ℹ️ Skipping ${description} (${frameName}): Frame not found in template.`);
             continue;
         }
 
-        console.log(`➡️  Mapping frame "${frameName}" to file "${targetFilename}" for replacement.`);
+        console.log(`➡️  Processing image for frame "${frameName}"...`);
 
         const imageBuffer = await fetchImage(url);
         if (!imageBuffer) {
-            console.warn(`⚠️ Failed to fetch image for ${description} from ${url}. Skipping replacement.`);
+            console.warn(`⚠️ Failed to fetch image for ${description} from ${url}.`);
             continue;
         }
 
+        // Create a unique filename based on the frame name to prevent overwriting shared images
+        const newFilename = `${frameName.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+        const imagePath = path.join(picturesDir, newFilename);
+
         try {
-            const imagePath = path.join(picturesDir, targetFilename);
+            // 1. Write the new image file
             await fs.writeFile(imagePath, imageBuffer);
-            console.log(`✅ Replaced ${description} (${frameName})`);
+
+            // 2. Update the XML to point to this new file
+            // This replacement ensures only the specific frame's image reference is changed
+            contentXml = contentXml.replace(frameRegex, `$1Pictures/${newFilename}$3`);
+
+            console.log(`✅ Replaced ${description} (${frameName}) with new file: ${newFilename}`);
             anyImageReplaced = true;
         } catch (writeError) {
-            console.error(`❌ Failed to write new image for ${description} to ${targetFilename}:`, writeError);
+            console.error(`❌ Failed to write new image for ${description}:`, writeError);
         }
     }
 
     if (anyImageReplaced) {
         try {
-            await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
-            console.log(`✅ Formatted content.xml for ${student.full_name}`);
+            // Save the modified content.xml
+            await fs.writeFile(contentXmlPath, contentXml);
+            // Optional: Format XML (ignoring errors if xmllint missing)
+            await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`).catch(() => { });
+            console.log(`✅ Updated content.xml for ${student.full_name}`);
         } catch (err) {
-            console.warn(`⚠️ xmllint formatting failed: ${err.message}. Using unformatted content.xml.`);
+            console.warn(`⚠️ Error saving content.xml: ${err.message}`);
         }
     } else {
         console.log(`ℹ️ No images were replaced for ${student.full_name}.`);
