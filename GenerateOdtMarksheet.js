@@ -343,9 +343,11 @@ async function findImageFilename(contentXmlPath, picturesDir, frameName) {
 
 async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) {
     const studentDir = path.join(tempDir, `student_${student.student_id}`);
+    // Clean up any previous attempts
+    await fs.rm(studentDir, { recursive: true, force: true }).catch(() => { });
     await fs.mkdir(studentDir, { recursive: true });
 
-    // Unzip ODT
+    // 1. Unzip ODT
     const unzipPromise = new Promise((resolve, reject) => {
         yauzl.open(templatePath, { lazyEntries: true }, (err, zipfile) => {
             if (err) return reject(err);
@@ -373,9 +375,8 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
     try {
         await unzipPromise;
-        console.log(`✅ Unzipped template for ${student.full_name} to ${studentDir}`);
     } catch (err) {
-        console.error(`❌ Failed to unzip template for ${student.full_name}:`, err);
+        console.error(`❌ Failed to unzip template:`, err);
         return templatePath;
     }
 
@@ -383,131 +384,122 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     const picturesDir = path.join(studentDir, 'Pictures');
     await fs.mkdir(picturesDir, { recursive: true });
 
-    // --- NEW: ROBUST XML MODIFICATION LOGIC ---
+    // 2. Parse XML, Replace Images with Unique Files, and Update References
+    try {
+        const contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+        // explicitArray: true ensures predictable traversal
+        // mergeAttrs: false allows us to easily modify attributes like xlink:href
+        const parsedXml = await parseXml(contentXml, { explicitArray: true, mergeAttrs: false });
 
-    // 1. Read and Parse XML with attributes explicitly separated (mergeAttrs: false)
-    // This allows us to modify the 'xlink:href' attribute and rebuild the XML accurately.
-    const contentXmlStr = await fs.readFile(contentXmlPath, 'utf-8');
-    const parsedXml = await parseXml(contentXmlStr, {
-        explicitArray: true,
-        mergeAttrs: false
-    });
+        // Helper to collect all frames
+        const allFrames = [];
+        function findFrames(node) {
+            if (typeof node !== 'object' || node === null) return;
+            if (node['draw:frame']) {
+                node['draw:frame'].forEach(f => allFrames.push(f));
+            }
+            Object.keys(node).forEach(key => {
+                if (Array.isArray(node[key])) node[key].forEach(findFrames);
+                else findFrames(node[key]);
+            });
+        }
+        findFrames(parsedXml);
 
-    // 2. Helper to find all draw:frame objects by reference
-    const frames = [];
-    function traverseFrames(node) {
-        if (typeof node !== 'object' || node === null) return;
-        for (const key in node) {
-            if (key === 'draw:frame') {
-                if (Array.isArray(node[key])) frames.push(...node[key]);
-            } else {
-                if (Array.isArray(node[key])) node[key].forEach(traverseFrames);
-                else traverseFrames(node[key]);
+        const imageReplacements = [
+            { frameName: 'Logo', url: schoolDetails.logo, description: 'School Logo' },
+            { frameName: 'studentImage', url: student.photo, description: 'Student Photo' }
+        ];
+
+        if (schoolDetails.signatures && typeof schoolDetails.signatures === 'object') {
+            for (const key in schoolDetails.signatures) {
+                if (schoolDetails.signatures[key]?.url) {
+                    imageReplacements.push({
+                        frameName: key,
+                        url: schoolDetails.signatures[key].url,
+                        description: `Signature ${key}`
+                    });
+                }
             }
         }
-    }
-    traverseFrames(parsedXml);
 
-    // 3. Define Replacements
-    const imageReplacements = [
-        { frameName: 'Logo', url: schoolDetails.logo, description: 'School Logo' },
-        { frameName: 'studentImage', url: student.photo, description: 'Student Photo' }
-    ];
+        let xmlModified = false;
 
-    if (schoolDetails.signatures && typeof schoolDetails.signatures === 'object') {
-        for (const key in schoolDetails.signatures) {
-            const signatureInfo = schoolDetails.signatures[key];
-            if (signatureInfo && signatureInfo.url) {
-                imageReplacements.push({
-                    frameName: key,
-                    url: signatureInfo.url,
-                    description: signatureInfo.name || `Signature ${key}`
-                });
+        for (const replacement of imageReplacements) {
+            const { frameName, url, description } = replacement;
+            if (!url || !String(url).startsWith("http")) continue;
+
+            const targetFrame = allFrames.find(f => f.$ && f.$['draw:name'] === frameName);
+
+            if (targetFrame && targetFrame['draw:image'] && targetFrame['draw:image'][0]) {
+                const imageBuffer = await fetchImage(url);
+                if (imageBuffer) {
+                    // Create UNIQUE filename to prevent overwriting issues
+                    const safeFrameName = frameName.replace(/[^a-zA-Z0-9]/g, '');
+                    const uniqueFilename = `${safeFrameName}_${Date.now()}_${Math.floor(Math.random() * 1000)}.png`;
+                    const newImagePath = path.join(picturesDir, uniqueFilename);
+
+                    await fs.writeFile(newImagePath, imageBuffer);
+
+                    // Update XML to point to the new unique file
+                    targetFrame['draw:image'][0].$['xlink:href'] = `Pictures/${uniqueFilename}`;
+                    xmlModified = true;
+                    console.log(`✅ Linked ${frameName} to unique file: ${uniqueFilename}`);
+                }
             }
         }
-    }
 
-    let anyImageReplaced = false;
-
-    // 4. Process Replacements
-    for (const replacement of imageReplacements) {
-        const { frameName, url, description } = replacement;
-
-        if (!url || !String(url).startsWith("http")) continue;
-
-        // Find the specific frame in our parsed list
-        const targetFrame = frames.find(f => f.$ && f.$['draw:name'] === frameName);
-
-        if (!targetFrame) {
-            // console.log(`ℹ️ Frame "${frameName}" not found in template.`);
-            continue;
+        if (xmlModified) {
+            // Rebuild XML. 'headless' is usually fine, but 'renderOpts' cleans up output.
+            const builder = new xml2js.Builder({
+                renderOpts: { pretty: false, indent: '', newline: '' },
+                xmldec: { version: '1.0', encoding: 'UTF-8', standalone: true }
+            });
+            const newXml = builder.buildObject(parsedXml);
+            await fs.writeFile(contentXmlPath, newXml);
         }
 
-        // Check if frame has an image container
-        if (targetFrame['draw:image'] && targetFrame['draw:image'][0] && targetFrame['draw:image'][0].$) {
-            console.log(`➡️  Processing ${description} (${frameName})...`);
-
-            const imageBuffer = await fetchImage(url);
-            if (!imageBuffer) {
-                console.warn(`⚠️ Failed to fetch image for ${description}`);
-                continue;
-            }
-
-            // Create a UNIQUE filename for this specific frame
-            // This prevents the "Logo overwritten by Student" issue
-            const uniqueFilename = `${frameName}_${Date.now()}_${Math.floor(Math.random() * 1000)}.png`;
-            const newImagePath = path.join(picturesDir, uniqueFilename);
-
-            try {
-                // Write the new image file
-                await fs.writeFile(newImagePath, imageBuffer);
-
-                // Update the XML to point to this new unique file
-                // Note: LibreOffice uses 'Pictures/filename' format
-                targetFrame['draw:image'][0].$['xlink:href'] = `Pictures/${uniqueFilename}`;
-
-                anyImageReplaced = true;
-                console.log(`✅ Replaced ${description} -> Linked to ${uniqueFilename}`);
-            } catch (err) {
-                console.error(`❌ Error writing image for ${frameName}:`, err);
-            }
-        }
+    } catch (e) {
+        console.error("❌ Critical error modifying content.xml:", e);
     }
 
-    // 5. Save the modified XML if changes were made
-    if (anyImageReplaced) {
-        try {
-            const builder = new xml2js.Builder();
-            const newXmlContent = builder.buildObject(parsedXml);
-            await fs.writeFile(contentXmlPath, newXmlContent);
-            console.log(`✅ Updated content.xml references for ${student.full_name}`);
-        } catch (err) {
-            console.error(`❌ Failed to rebuild XML for ${student.full_name}:`, err);
-        }
-    }
-
-    // --- END OF NEW LOGIC ---
-
-    // Re-zip to create new ODT
+    // 3. Re-zip CORRECTLY (Mandatory: mimetype must be first and uncompressed)
     const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id;
     const newOdtPath = path.join(tempDir, `${safeName}.odt`);
     const zip = new yazl.ZipFile();
-    const walkDir = async (dir, zipPath = '') => {
+
+    // A. Add mimetype first (STORE, no compression)
+    const mimetypePath = path.join(studentDir, 'mimetype');
+    let hasMimetype = false;
+    try {
+        await fs.access(mimetypePath);
+        hasMimetype = true;
+        zip.addFile(mimetypePath, 'mimetype', { compress: false });
+    } catch (e) {
+        console.warn('⚠️ mimetype file missing in template. ODT might be invalid.');
+    }
+
+    // B. Add all other files
+    const walkDir = async (dir, relativeRoot) => {
         const files = await fs.readdir(dir);
         for (const file of files) {
+            // Skip mimetype as it's already added
+            if (file === 'mimetype' && relativeRoot === '') continue;
+
             const fullPath = path.join(dir, file);
             const stats = await fs.stat(fullPath);
-            const zipEntry = path.join(zipPath, file);
+            const zipPath = relativeRoot ? `${relativeRoot}/${file}` : file;
+
             if (stats.isDirectory()) {
-                await walkDir(fullPath, zipEntry);
+                await walkDir(fullPath, zipPath);
             } else {
-                zip.addFile(fullPath, zipEntry);
+                zip.addFile(fullPath, zipPath);
             }
         }
     };
 
     try {
-        await walkDir(studentDir);
+        await walkDir(studentDir, '');
+
         const writeStream = require('fs').createWriteStream(newOdtPath);
         zip.outputStream.pipe(writeStream);
         await new Promise((resolve, reject) => {
@@ -516,8 +508,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             zip.end();
         });
 
-        const fileExists = await waitForFile(newOdtPath);
-        if (!fileExists) throw new Error(`File not created`);
+        await waitForFile(newOdtPath);
         return newOdtPath;
     } catch (err) {
         console.error(`❌ Failed to re-zip ODT for ${student.full_name}:`, err);
