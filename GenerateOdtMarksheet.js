@@ -127,7 +127,7 @@ async function downloadFile(url) {
 }
 
 async function convertOdtToPdf(odtPath, outputDir) {
-    const command = `libreoffice --headless --convert-to pdf --outdir "${outputDir}" "${odtPath}"`;
+    const command = `libreoffice --headless --convert-to "pdf:writer_pdf_Export:EmbedStandardFonts=true" --outdir "${outputDir}" "${odtPath}"`;
     try {
         console.log(`🔄 Running conversion for: ${path.basename(odtPath)}`);
         const { stdout, stderr } = await execPromise(command);
