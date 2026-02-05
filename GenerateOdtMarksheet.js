@@ -390,47 +390,47 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     try {
         stylesXml = await fs.readFile(stylesXmlPath, 'utf-8');
     } catch (e) {
-        // styles.xml might not exist in all templates
+        // styles.xml might not exist
     }
 
-    // --- FIX START: AGGRESSIVE ALIGNMENT FIX ---
-    // 1. Replaces standard "Justify" with "Left"
-    // 2. Replaces "Last Line Justify" (The main culprit for 'D i s e c o d e')
-    // 3. Disables "Justify Single Word"
-    const fixJustify = (xml, filename) => {
+    // --- FIX START: NUCLEAR OPTION FOR TEXT SPACING ---
+    const fixSpacingIssues = (xml, filename) => {
         if (!xml) return xml;
-
         let newXml = xml;
         let changed = false;
 
-        // Fix 1: Standard Justification
-        if (newXml.includes('fo:text-align="justify"')) {
-            newXml = newXml.replace(/fo:text-align="justify"/g, 'fo:text-align="left"');
+        // 1. Fix Alignment (Handle both " and ' quotes)
+        if (/fo:text-align\s*=\s*["']justify["']/i.test(newXml)) {
+            newXml = newXml.replace(/fo:text-align\s*=\s*["']justify["']/gi, 'fo:text-align="left"');
             changed = true;
         }
 
-        // Fix 2: Last Line Justification (Crucial for single-line labels)
-        if (newXml.includes('fo:text-align-last="justify"')) {
-            newXml = newXml.replace(/fo:text-align-last="justify"/g, 'fo:text-align-last="left"');
+        // 2. Fix Last Line Alignment (Major culprit for labels)
+        if (/fo:text-align-last\s*=\s*["']justify["']/i.test(newXml)) {
+            newXml = newXml.replace(/fo:text-align-last\s*=\s*["']justify["']/gi, 'fo:text-align-last="left"');
             changed = true;
         }
 
-        // Fix 3: Justify Single Word (Rare ODF property)
-        if (newXml.includes('style:justify-single-word="true"')) {
-            newXml = newXml.replace(/style:justify-single-word="true"/g, 'style:justify-single-word="false"');
+        // 3. Fix Letter Spacing (Reset wide spacing to normal)
+        // This finds `fo:letter-spacing="..."` and forces it to "normal"
+        if (/fo:letter-spacing\s*=\s*["'][^"']*["']/i.test(newXml)) {
+            newXml = newXml.replace(/fo:letter-spacing\s*=\s*["'][^"']*["']/gi, 'fo:letter-spacing="normal"');
             changed = true;
         }
 
-        if (changed) {
-            console.log(`🔧 Fixed justified alignment issues in ${filename}`);
+        // 4. Fix Text Scale (Reset horizontal stretching)
+        if (/style:text-scale\s*=\s*["'][^"']*["']/i.test(newXml)) {
+            newXml = newXml.replace(/style:text-scale\s*=\s*["'][^"']*["']/gi, 'style:text-scale="100%"');
+            changed = true;
         }
+
+        if (changed) console.log(`🔧 Fixed text spacing/alignment issues in ${filename}`);
         return newXml;
     };
 
-    contentXml = fixJustify(contentXml, 'content.xml');
-
+    contentXml = fixSpacingIssues(contentXml, 'content.xml');
     if (stylesXml) {
-        const fixedStyles = fixJustify(stylesXml, 'styles.xml');
+        const fixedStyles = fixSpacingIssues(stylesXml, 'styles.xml');
         if (fixedStyles !== stylesXml) {
             await fs.writeFile(stylesXmlPath, fixedStyles);
         }
@@ -439,16 +439,8 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
     // Define images to replace
     const imageReplacements = [
-        {
-            frameName: 'Logo',
-            url: schoolDetails.logo,
-            description: 'School Logo'
-        },
-        {
-            frameName: 'studentImage',
-            url: student.photo,
-            description: 'Student Photo'
-        }
+        { frameName: 'Logo', url: schoolDetails.logo, description: 'School Logo' },
+        { frameName: 'studentImage', url: student.photo, description: 'Student Photo' }
     ];
 
     if (schoolDetails.signatures && typeof schoolDetails.signatures === 'object') {
@@ -469,7 +461,6 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     let anyImageReplaced = false;
     let newManifestEntries = [];
 
-    // Process image replacements
     for (const replacement of imageReplacements) {
         const { frameName, url, description } = replacement;
         if (!url || !String(url).startsWith("http")) continue;
@@ -492,30 +483,23 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
                 } catch (writeError) {
                     console.error(`❌ Failed to write new image for ${description}:`, writeError);
                 }
-            } else {
-                console.warn(`⚠️ Failed to fetch image for ${description} from ${url}.`);
             }
         }
     }
 
-    // Always write content.xml back to apply the text alignment fix
+    // Always write content.xml back to apply the text spacing fix
     try {
         await fs.writeFile(contentXmlPath, contentXml);
 
-        // Update manifest only if we added new images
         if (anyImageReplaced && newManifestEntries.length > 0) {
             const manifestPath = path.join(studentDir, 'META-INF', 'manifest.xml');
             let manifestXml = await fs.readFile(manifestPath, 'utf-8').catch(() => '');
             if (manifestXml && manifestXml.includes('</manifest:manifest>')) {
                 manifestXml = manifestXml.replace('</manifest:manifest>', `${newManifestEntries.join('\n')}\n</manifest:manifest>`);
                 await fs.writeFile(manifestPath, manifestXml);
-                console.log(`✅ Updated manifest.xml`);
             }
         }
-
-        // Optional format check
         await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`).catch(() => { });
-
     } catch (err) {
         console.warn(`⚠️ Error saving ODT XML files: ${err.message}`);
     }
@@ -548,9 +532,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             zip.end();
         });
 
-        if (await waitForFile(newOdtPath)) {
-            return newOdtPath;
-        }
+        if (await waitForFile(newOdtPath)) return newOdtPath;
         throw new Error(`File not created.`);
     } catch (err) {
         console.error(`❌ Failed to re-zip ODT for ${student.full_name}:`, err);
