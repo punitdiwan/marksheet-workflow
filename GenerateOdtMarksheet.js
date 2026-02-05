@@ -376,78 +376,35 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         console.log(`✅ Unzipped template for ${student.full_name} to ${studentDir}`);
     } catch (err) {
         console.error(`❌ Failed to unzip template for ${student.full_name}:`, err);
-        return templatePath;
+        return templatePath; // Return original if unzip fails
     }
 
     const contentXmlPath = path.join(studentDir, 'content.xml');
-    const stylesXmlPath = path.join(studentDir, 'styles.xml');
     const picturesDir = path.join(studentDir, 'Pictures');
-    await fs.mkdir(picturesDir, { recursive: true });
+    await fs.mkdir(picturesDir, { recursive: true }); // Ensure Pictures directory exists
 
-    // 1. Read content.xml and styles.xml
-    let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-    let stylesXml = null;
-    try {
-        stylesXml = await fs.readFile(stylesXmlPath, 'utf-8');
-    } catch (e) {
-        // styles.xml might not exist
-    }
+    // --- NEW: UNIFIED AND NAME-BASED IMAGE REPLACEMENT LOGIC ---
 
-    // --- FIX START: NUCLEAR OPTION FOR TEXT SPACING ---
-    const fixSpacingIssues = (xml, filename) => {
-        if (!xml) return xml;
-        let newXml = xml;
-        let changed = false;
-
-        // 1. Fix Alignment (Handle both " and ' quotes)
-        if (/fo:text-align\s*=\s*["']justify["']/i.test(newXml)) {
-            newXml = newXml.replace(/fo:text-align\s*=\s*["']justify["']/gi, 'fo:text-align="left"');
-            changed = true;
-        }
-
-        // 2. Fix Last Line Alignment (Major culprit for labels)
-        if (/fo:text-align-last\s*=\s*["']justify["']/i.test(newXml)) {
-            newXml = newXml.replace(/fo:text-align-last\s*=\s*["']justify["']/gi, 'fo:text-align-last="left"');
-            changed = true;
-        }
-
-        // 3. Fix Letter Spacing (Reset wide spacing to normal)
-        // This finds `fo:letter-spacing="..."` and forces it to "normal"
-        if (/fo:letter-spacing\s*=\s*["'][^"']*["']/i.test(newXml)) {
-            newXml = newXml.replace(/fo:letter-spacing\s*=\s*["'][^"']*["']/gi, 'fo:letter-spacing="normal"');
-            changed = true;
-        }
-
-        // 4. Fix Text Scale (Reset horizontal stretching)
-        if (/style:text-scale\s*=\s*["'][^"']*["']/i.test(newXml)) {
-            newXml = newXml.replace(/style:text-scale\s*=\s*["'][^"']*["']/gi, 'style:text-scale="100%"');
-            changed = true;
-        }
-
-        if (changed) console.log(`🔧 Fixed text spacing/alignment issues in ${filename}`);
-        return newXml;
-    };
-
-    contentXml = fixSpacingIssues(contentXml, 'content.xml');
-    if (stylesXml) {
-        const fixedStyles = fixSpacingIssues(stylesXml, 'styles.xml');
-        if (fixedStyles !== stylesXml) {
-            await fs.writeFile(stylesXmlPath, fixedStyles);
-        }
-    }
-    // --- FIX END ---
-
-    // Define images to replace
+    // Define the images we want to replace by their frame name in the ODT
+    // and where to find their new URL in our data.
     const imageReplacements = [
-        { frameName: 'Logo', url: schoolDetails.logo, description: 'School Logo' },
-        { frameName: 'studentImage', url: student.photo, description: 'Student Photo' }
+        {
+            frameName: 'Logo',
+            url: schoolDetails.logo,
+            description: 'School Logo'
+        },
+        {
+            frameName: 'studentImage',
+            url: student.photo,
+            description: 'Student Photo'
+        }
     ];
 
     if (schoolDetails.signatures && typeof schoolDetails.signatures === 'object') {
         for (const key in schoolDetails.signatures) {
             if (Object.prototype.hasOwnProperty.call(schoolDetails.signatures, key)) {
                 const signatureInfo = schoolDetails.signatures[key];
-                if (signatureInfo?.url) {
+                if (signatureInfo && signatureInfo.url) {
                     imageReplacements.push({
                         frameName: key,
                         url: signatureInfo.url,
@@ -459,52 +416,54 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     }
 
     let anyImageReplaced = false;
-    let newManifestEntries = [];
 
+    // Process each potential image replacement
     for (const replacement of imageReplacements) {
         const { frameName, url, description } = replacement;
-        if (!url || !String(url).startsWith("http")) continue;
 
-        const frameRegex = new RegExp(`(<draw:frame[^>]*draw:name="${frameName}"[\\s\\S]*?<draw:image[^>]*xlink:href=")([^"]+)(")`, 'i');
+        if (!url || !String(url).startsWith("http")) {
+            // console.log(`ℹ️ Skipping ${description} (${frameName}): No valid URL provided.`);
+            continue;
+        }
 
-        if (frameRegex.test(contentXml)) {
-            console.log(`➡️  Processing image for frame "${frameName}"...`);
-            const imageBuffer = await fetchImage(url);
+        const targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName);
+        if (!targetFilename) {
+            // console.log(`ℹ️ Skipping ${description} (${frameName}): Frame not found in the template.`);
+            continue;
+        }
 
-            if (imageBuffer) {
-                const newFilename = `${frameName.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
-                const imagePath = path.join(picturesDir, newFilename);
-                try {
-                    await fs.writeFile(imagePath, imageBuffer);
-                    contentXml = contentXml.replace(frameRegex, `$1Pictures/${newFilename}$3`);
-                    newManifestEntries.push(`<manifest:file-entry manifest:full-path="Pictures/${newFilename}" manifest:media-type="image/png"/>`);
-                    console.log(`✅ Replaced ${description} (${frameName}) with: ${newFilename}`);
-                    anyImageReplaced = true;
-                } catch (writeError) {
-                    console.error(`❌ Failed to write new image for ${description}:`, writeError);
-                }
-            }
+        console.log(`➡️  Mapping frame "${frameName}" to file "${targetFilename}" for replacement.`);
+
+        const imageBuffer = await fetchImage(url);
+        if (!imageBuffer) {
+            console.warn(`⚠️ Failed to fetch image for ${description} from ${url}. Skipping replacement.`);
+            continue;
+        }
+
+        try {
+            const imagePath = path.join(picturesDir, targetFilename);
+            await fs.writeFile(imagePath, imageBuffer);
+            console.log(`✅ Replaced ${description} (${frameName})`);
+            anyImageReplaced = true;
+        } catch (writeError) {
+            console.error(`❌ Failed to write new image for ${description} to ${targetFilename}:`, writeError);
         }
     }
 
-    // Always write content.xml back to apply the text spacing fix
-    try {
-        await fs.writeFile(contentXmlPath, contentXml);
-
-        if (anyImageReplaced && newManifestEntries.length > 0) {
-            const manifestPath = path.join(studentDir, 'META-INF', 'manifest.xml');
-            let manifestXml = await fs.readFile(manifestPath, 'utf-8').catch(() => '');
-            if (manifestXml && manifestXml.includes('</manifest:manifest>')) {
-                manifestXml = manifestXml.replace('</manifest:manifest>', `${newManifestEntries.join('\n')}\n</manifest:manifest>`);
-                await fs.writeFile(manifestPath, manifestXml);
-            }
+    if (anyImageReplaced) {
+        try {
+            await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
+            console.log(`✅ Formatted content.xml for ${student.full_name}`);
+        } catch (err) {
+            console.warn(`⚠️ xmllint formatting failed: ${err.message}. Using unformatted content.xml.`);
         }
-        await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`).catch(() => { });
-    } catch (err) {
-        console.warn(`⚠️ Error saving ODT XML files: ${err.message}`);
+    } else {
+        console.log(`ℹ️ No images were replaced for ${student.full_name}.`);
     }
 
-    // Re-zip
+    // --- END OF NEW LOGIC ---
+
+    // Re-zip to create new ODT
     const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id;
     const newOdtPath = path.join(tempDir, `${safeName}.odt`);
     const zip = new yazl.ZipFile();
@@ -531,9 +490,13 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             writeStream.on('error', reject);
             zip.end();
         });
+        console.log(`✅ Zipped new ODT for ${student.full_name} at ${newOdtPath}`);
 
-        if (await waitForFile(newOdtPath)) return newOdtPath;
-        throw new Error(`File not created.`);
+        const fileExists = await waitForFile(newOdtPath);
+        if (!fileExists) {
+            throw new Error(`File ${newOdtPath} was not created or accessible after zipping`);
+        }
+        return newOdtPath;
     } catch (err) {
         console.error(`❌ Failed to re-zip ODT for ${student.full_name}:`, err);
         return templatePath;
