@@ -147,6 +147,18 @@ async function convertOdtToPdf(odtPath, outputDir) {
     }
 }
 
+async function normalizeTextSpans(xmlPath) {
+    let xml = await fs.readFile(xmlPath, 'utf8');
+
+    // Merge adjacent spans with same style
+    xml = xml.replace(
+        /<\/text:span>\s*<text:span[^>]*>/g,
+        ''
+    );
+
+    await fs.writeFile(xmlPath, xml);
+}
+
 /**
  * Adds a white overlay to the top of a PDF file with configurable margins.
  * @param {string} inputPdfPath - The path to the input PDF.
@@ -453,6 +465,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     if (anyImageReplaced) {
         try {
             await execPromise(`xmllint --format "${contentXmlPath}" -o "${contentXmlPath}"`);
+            await normalizeTextSpans(contentXmlPath);
             console.log(`✅ Formatted content.xml for ${student.full_name}`);
         } catch (err) {
             console.warn(`⚠️ xmllint formatting failed: ${err.message}. Using unformatted content.xml.`);
