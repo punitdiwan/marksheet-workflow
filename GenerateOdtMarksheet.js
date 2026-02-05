@@ -380,7 +380,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     }
 
     const contentXmlPath = path.join(studentDir, 'content.xml');
-    const stylesXmlPath = path.join(studentDir, 'styles.xml'); // NEW: Path to styles.xml
+    const stylesXmlPath = path.join(studentDir, 'styles.xml');
     const picturesDir = path.join(studentDir, 'Pictures');
     await fs.mkdir(picturesDir, { recursive: true });
 
@@ -390,22 +390,49 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     try {
         stylesXml = await fs.readFile(stylesXmlPath, 'utf-8');
     } catch (e) {
-        // styles.xml might not exist in some simple ODTs, ignore error
+        // styles.xml might not exist in all templates
     }
 
-    // --- FIX START: FORCE LEFT ALIGNMENT IN BOTH FILES ---
-    // This replaces "Justified" with "Left" to prevent spacing issues like "D I S E  C O D E"
-    const fixJustify = (xml) => {
+    // --- FIX START: AGGRESSIVE ALIGNMENT FIX ---
+    // 1. Replaces standard "Justify" with "Left"
+    // 2. Replaces "Last Line Justify" (The main culprit for 'D i s e c o d e')
+    // 3. Disables "Justify Single Word"
+    const fixJustify = (xml, filename) => {
         if (!xml) return xml;
-        return xml.replace(/fo:text-align="justify"/g, 'fo:text-align="left"');
+
+        let newXml = xml;
+        let changed = false;
+
+        // Fix 1: Standard Justification
+        if (newXml.includes('fo:text-align="justify"')) {
+            newXml = newXml.replace(/fo:text-align="justify"/g, 'fo:text-align="left"');
+            changed = true;
+        }
+
+        // Fix 2: Last Line Justification (Crucial for single-line labels)
+        if (newXml.includes('fo:text-align-last="justify"')) {
+            newXml = newXml.replace(/fo:text-align-last="justify"/g, 'fo:text-align-last="left"');
+            changed = true;
+        }
+
+        // Fix 3: Justify Single Word (Rare ODF property)
+        if (newXml.includes('style:justify-single-word="true"')) {
+            newXml = newXml.replace(/style:justify-single-word="true"/g, 'style:justify-single-word="false"');
+            changed = true;
+        }
+
+        if (changed) {
+            console.log(`🔧 Fixed justified alignment issues in ${filename}`);
+        }
+        return newXml;
     };
 
-    contentXml = fixJustify(contentXml);
+    contentXml = fixJustify(contentXml, 'content.xml');
+
     if (stylesXml) {
-        const fixedStyles = fixJustify(stylesXml);
+        const fixedStyles = fixJustify(stylesXml, 'styles.xml');
         if (fixedStyles !== stylesXml) {
             await fs.writeFile(stylesXmlPath, fixedStyles);
-            console.log("✅ Fixed justified text alignment in styles.xml");
         }
     }
     // --- FIX END ---
@@ -471,7 +498,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
         }
     }
 
-    // Always write content.xml back (because we applied the text alignment fix)
+    // Always write content.xml back to apply the text alignment fix
     try {
         await fs.writeFile(contentXmlPath, contentXml);
 
