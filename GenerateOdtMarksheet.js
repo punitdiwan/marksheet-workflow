@@ -713,13 +713,13 @@ async function GenerateOdtFile() {
         };
 
         // Determine which API to call. If we have specific students (Previous Year), use studentWiseMarks.
-        let fetchUrl = 'https://demoschool.edusparsh.com/api/cce_examv1/getMarks';
+        let fetchUrl = 'https://demoschool-git-mkfeb07weighdiv-punit-diwans-projects.vercel.app/api/cce_examv1/getMarks';
 
         if (studentIdsInput) {
             const sIds = studentIdsInput.split(',');
             marksPayload.student_ids = sIds;
             marksPayload.student_id = sIds; // Add this key as studentWiseMarks often expects 'student_id'
-            fetchUrl = 'https://demoschool.edusparsh.com/api/cce_examv1/studentWiseMarks';
+            fetchUrl = 'https://demoschool-git-mkfeb07weighdiv-punit-diwans-projects.vercel.app/api/cce_examv1/studentWiseMarks';
         }
 
         console.log("📥 Fetching student data...");
