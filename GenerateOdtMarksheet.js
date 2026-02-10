@@ -644,12 +644,14 @@ async function GenerateOdtFile() {
         let studentDetailsConfigFromApi = null;
         try {
             const configPayload = {
+                // _school: schoolId,
                 school_id: schoolId,
                 course_id: courseId,
                 config_key: 'student_details_config'
             };
 
             const configResponse = await fetch('https://demoschool-git-mkfeb09stdetailstemp-punit-diwans-projects.vercel.app/api/gettempletemetedata', {
+                // const configResponse = await fetch('https://demoschool.edusparsh.com/api/getConfiguration', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(configPayload),
@@ -657,8 +659,10 @@ async function GenerateOdtFile() {
 
             if (configResponse.ok) {
                 const configData = await configResponse.json();
+                console.log(typeof (configData), "configData")
                 if (configData && configData.config_value) {
-                    studentDetailsConfigFromApi = configData.config_value;
+                    studentDetailsConfigFromApi = JSON.stringify(classData.config_value);
+                    console.log("studentDetailsConfigFromApi", studentDetailsConfigFromApi)
                     console.log("✅ Successfully fetched student details configuration from API.");
                 } else {
                     console.warn("⚠️ Config fetched, but 'config_value' is missing.");
