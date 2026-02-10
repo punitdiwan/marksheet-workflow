@@ -664,7 +664,11 @@ async function GenerateOdtFile() {
                 const configData = await configResponse.json();
                 console.log(typeof (configData), "configData")
                 if (configData && configData.config_value) {
-                    studentDetailsConfigFromApi = JSON.stringify(classData.config_value);
+                    if (typeof configData.config_value === 'object') {
+                        studentDetailsConfigFromApi = JSON.stringify(configData.config_value);
+                    } else {
+                        studentDetailsConfigFromApi = configData.config_value;
+                    }
                     console.log("studentDetailsConfigFromApi", studentDetailsConfigFromApi)
                     console.log("✅ Successfully fetched student details configuration from API.");
                 } else {
