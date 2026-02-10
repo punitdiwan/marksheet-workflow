@@ -657,6 +657,8 @@ async function GenerateOdtFile() {
                 body: JSON.stringify(configPayload),
             });
 
+            console.log("configResponse", configResponse);
+
             if (configResponse.ok) {
                 const configData = await configResponse.json();
                 console.log(typeof (configData), "configData")
