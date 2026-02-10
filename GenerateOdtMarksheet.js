@@ -644,11 +644,12 @@ async function GenerateOdtFile() {
         let studentDetailsConfigFromApi = null;
         try {
             const configPayload = {
-                _school: schoolId,
+                school_id: schoolId,
+                course_id: courseId,
                 config_key: 'student_details_config'
             };
 
-            const configResponse = await fetch('https://demoschool.edusparsh.com/api/getConfiguration', {
+            const configResponse = await fetch('https://demoschool-git-mkfeb09stdetailstemp-punit-diwans-projects.vercel.app/api/gettempletemetedata', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(configPayload),
