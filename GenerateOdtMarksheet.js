@@ -642,31 +642,78 @@ async function GenerateOdtFile() {
 
         console.log("⚙️ Fetching student details configuration...");
         let studentDetailsConfigFromApi = null;
+
+        /* -------------------- TRY NEW API FIRST -------------------- */
         try {
             const configPayload = {
-                _school: schoolId,
-                config_key: 'student_details_config'
+                school_id: schoolId,
+                course_id: courseId,
+                config_type: 'student_details_config'
             };
 
-            const configResponse = await fetch('https://demoschool.edusparsh.com/api/getConfiguration', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(configPayload),
-            });
+            const configResponse = await fetch(
+                'https://demoschool-git-mkfeb09stdetailstemp-punit-diwans-projects.vercel.app/api/gettempletemetedata',
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(configPayload),
+                }
+            );
 
             if (configResponse.ok) {
                 const configData = await configResponse.json();
+
                 if (configData && configData.config_value) {
-                    studentDetailsConfigFromApi = configData.config_value;
-                    console.log("✅ Successfully fetched student details configuration from API.");
+                    studentDetailsConfigFromApi =
+                        typeof configData.config_value === 'object'
+                            ? JSON.stringify(configData.config_value)
+                            : configData.config_value;
+
+                    console.log("✅ Config loaded from NEW template metadata API.");
                 } else {
-                    console.warn("⚠️ Config fetched, but 'config_value' is missing.");
+                    console.warn("⚠️ New API returned no config_value. Will fallback.");
                 }
             } else {
-                console.warn(`⚠️ API failed to fetch remote config (${configResponse.statusText}).`);
+                console.warn(`⚠️ New API failed (${configResponse.statusText}). Will fallback.`);
             }
         } catch (configError) {
-            console.warn(`⚠️ Error fetching remote config: ${configError.message}.`);
+            console.warn(`⚠️ Error calling new API: ${configError.message}. Will fallback.`);
+        }
+
+        /* -------------------- FALLBACK TO OLD API -------------------- */
+        if (!studentDetailsConfigFromApi) {
+            console.log("↩️ Falling back to old configuration API...");
+
+            try {
+                const configPayload = {
+                    _school: schoolId,
+                    config_key: 'student_details_config'
+                };
+
+                const configResponse = await fetch(
+                    'https://demoschool.edusparsh.com/api/getConfiguration',
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(configPayload),
+                    }
+                );
+
+                if (configResponse.ok) {
+                    const configData = await configResponse.json();
+
+                    if (configData && configData.config_value) {
+                        studentDetailsConfigFromApi = configData.config_value;
+                        console.log("✅ Loaded config from OLD API.");
+                    } else {
+                        console.warn("⚠️ Old API also returned no config.");
+                    }
+                } else {
+                    console.warn(`⚠️ Old API failed (${configResponse.statusText}).`);
+                }
+            } catch (configError) {
+                console.warn(`⚠️ Old API error: ${configError.message}.`);
+            }
         }
 
         // --- NEW: FETCH NAMING CONVENTION CONFIG ---
