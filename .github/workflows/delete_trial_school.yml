@@ -1,0 +1,22 @@
+name: Delete Trial Schools
+
+on:
+  workflow_dispatch:
+    branches: [main]
+  schedule:
+    - cron: "30 00 * * *"
+jobs:
+  installments-pipeline:
+    name: Check Trail Schools and Delete them
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+
+      - name: Give executive permissions
+        run: |
+          chmod +x ./delete_school.sh
+      - name: Run the Delete School Script
+        run: |
+          ./delete_school.sh
