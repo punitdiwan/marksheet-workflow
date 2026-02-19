@@ -766,7 +766,8 @@ async function GenerateOdtFile() {
             const sIds = studentIdsInput.split(',');
             marksPayload.student_ids = sIds;
             marksPayload.student_id = sIds; // Add this key as studentWiseMarks often expects 'student_id'
-            fetchUrl = 'https://demoschool-git-mkfeb17weightagemax-punit-diwans-projects.vercel.app/api/cce_examv1/studentWiseMarks';
+            // fetchUrl = 'https://demoschool-git-mkfeb17weightagemax-punit-diwans-projects.vercel.app/api/cce_examv1/studentWiseMarks';
+            fetchUrl = 'https://demoschool.edusparsh.com/api/cce_examv1/studentWiseMarks';
         }
 
         console.log("📥 Fetching student data...");
@@ -798,8 +799,8 @@ async function GenerateOdtFile() {
         console.log(`✅ Found and will process ${students.length} student(s).`);
 
         console.log("📡 Fetching marksheet config + transformed data...");
-        // const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
-        const apiRes = await fetch('https://demoschool-git-mkfeb17weightagemax-punit-diwans-projects.vercel.app/api/marksheetdataodt', {
+        const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
+            // const apiRes = await fetch('https://demoschool-git-mkfeb17weightagemax-punit-diwans-projects.vercel.app/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
