@@ -1,0 +1,25 @@
+name: Create eduSparch Service Automation Pipeline
+
+on:
+  workflow_dispatch:
+    branches: [main]
+  schedule:
+    - cron: "30 00 * * 0"
+jobs:
+  create-service:
+    name: Create eduSparsh Service Automation Pipeline
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq uuid-runtime
+
+      - name: Give executive permissions
+        run: |
+          chmod +x ./create_eduSparsh_Service.sh
+      - name: Run the Service Script
+        run: |
+          ./create_eduSparsh_Service.sh
