@@ -850,18 +850,27 @@ async function GenerateOdtFile() {
 
             if (dynamicDetailsConfig && typeof dynamicDetailsConfig === 'string') {
                 try {
-                    const config = JSON.parse(dynamicDetailsConfig);
-                    if (Array.isArray(config)) {
-                        config.forEach((item, index) => {
-                            const slotNumber = index + 1;
-                            if (item.label && item.key) {
-                                details[`label${slotNumber}`] = item.label;
-                                details[`value${slotNumber}`] = transformedData[item.key] || '';
-                            }
-                        });
-                    } else {
-                        console.warn('⚠️ Parsed dynamic config is not an array.');
+                    const parsedConfig = JSON.parse(dynamicDetailsConfig);
+
+                    // NEW API format
+                    let configArray = [];
+
+                    if (Array.isArray(parsedConfig)) {
+                        // Old API format
+                        configArray = parsedConfig;
+                    } else if (parsedConfig.fields && Array.isArray(parsedConfig.fields)) {
+                        // New API format
+                        configArray = parsedConfig.fields;
                     }
+
+                    configArray.forEach((item, index) => {
+                        const slotNumber = index + 1;
+
+                        if (item.label && item.key) {
+                            details[`label${slotNumber}`] = item.label;
+                            details[`value${slotNumber}`] = transformedData[item.key] || '';
+                        }
+                    });
                 } catch (e) {
                     console.warn(`⚠️ Could not parse dynamic details config: ${e.message}`);
                 }
