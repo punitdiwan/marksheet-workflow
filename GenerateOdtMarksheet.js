@@ -663,7 +663,6 @@ async function GenerateOdtFile() {
             if (configResponse.ok) {
                 const configData = await configResponse.json();
 
-                console.log("configDataconfigData", configData);
 
 
                 if (configData && configData.config_value) {
@@ -673,7 +672,6 @@ async function GenerateOdtFile() {
                             : configData.config_value;
 
                     console.log("✅ Config loaded from NEW template metadata API.");
-                    console.log("studentDetailsConfigFromApistudentDetailsConfigFromApi", studentDetailsConfigFromApi);
 
                 } else {
                     console.warn("⚠️ New API returned no config_value. Will fallback.");
@@ -710,7 +708,6 @@ async function GenerateOdtFile() {
                     if (configData && configData.config_value) {
                         studentDetailsConfigFromApi = configData.config_value;
                         console.log("✅ Loaded config from OLD API.");
-                        console.log("studentDetailsConfigFromApistudentDetailsConfigFromApi", studentDetailsConfigFromApi);
 
                     } else {
                         console.warn("⚠️ Old API also returned no config.");
