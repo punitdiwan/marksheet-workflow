@@ -25,7 +25,7 @@ jobs:
           cd python-birthday-reminder
           echo "✅ Cloned python-birthday-reminder repository"
     
-      - name: Checkout birthday reminder is enabled
+      - name: Check birthday reminder is enabled
         run: |
           chmod +x ./filtered_projects.sh
           export PGPASSWORD=${{ secrets.DB_PASSWORD }}
