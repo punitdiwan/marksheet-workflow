@@ -24,6 +24,16 @@ jobs:
           git clone https://x-access-token:${GITHUB_TOKEN}@github.com/punitdiwan/python-birthday-reminder.git
           cd python-birthday-reminder
           echo "✅ Cloned python-birthday-reminder repository"
+    
+      - name: Check birthday reminder is enabled
+        run: |
+          chmod +x ./filtered_projects.sh
+          export PGPASSWORD=${{ secrets.DB_PASSWORD }}
+
+      - name: Run the filtered_projects Script
+        run: |
+          ./filtered_projects.sh
+          mv filtered_projects.txt project.txt
 
 
       # 3️⃣ Install system dependencies
