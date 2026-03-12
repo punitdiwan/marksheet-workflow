@@ -477,7 +477,8 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     // --- END OF NEW LOGIC ---
 
     // Re-zip to create new ODT
-    const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id;
+    // const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id; // removed for fixing duplicate name issue
+    const safeName = `${student.full_name?.replace(/\s+/g, '_') || 'student'}_${student.student_id}`;
     const newOdtPath = path.join(tempDir, `${safeName}.odt`);
     const zip = new yazl.ZipFile();
     const walkDir = async (dir, zipPath = '') => {
@@ -888,7 +889,8 @@ async function GenerateOdtFile() {
                 console.log(`------------------------------------\n`);
             }
 
-            const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
+            // const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`; // removed for fixing duplicate name issue
+            const fileSafeName = `${student.full_name?.replace(/\s+/g, '_') || 'student'}_${student.student_id}`;
             const odtReport = await carboneRender(modifiedOdtPath, dataForCarbone);
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             await fs.writeFile(odtFilename, odtReport);
