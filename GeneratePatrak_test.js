@@ -59,6 +59,15 @@ async function getStudentCount() {
     }
 }
 
+function getClassFromTemplate(url) {
+    const lower = (url || "").toLowerCase();
+
+    if (lower.includes("9th")) return 9;
+    if (lower.includes("10th")) return 10;
+
+    return null;
+}
+
 // Function to fill template
 async function fillTemplate(valuesArray, studentData) {
     const workbook = new ExcelJS.Workbook();
@@ -66,13 +75,16 @@ async function fillTemplate(valuesArray, studentData) {
 
     const batchId = process.env.BATCH_ID;
 
-    // Define special batch IDs
-    const specialBatches = ['xzX2QnGik4Si', '9BrwgPLU51To', 'Fwdn0iYR6fWP', 'EzGK1UDNVYvm'];
-    const isSpecialBatch = specialBatches.includes(batchId);
+    // Define special batch IDs that require different row configurations
+    const classNumber = getClassFromTemplate(process.env.TEMPLATE_URL);
+    const isSpecialBatch = [9, 10].includes(classNumber);
 
     // Dynamic row configuration
     const headerRowIndex = isSpecialBatch ? 22 : 18;
     let rowIndex1 = isSpecialBatch ? 23 : 19;
+
+    // const headerRowIndex = 18;
+    // let rowIndex1 = 19;
 
     const sheet1 = workbook.worksheets[0];
     const headerRow1 = sheet1.getRow(headerRowIndex);

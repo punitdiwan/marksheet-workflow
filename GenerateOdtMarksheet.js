@@ -477,7 +477,8 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
     // --- END OF NEW LOGIC ---
 
     // Re-zip to create new ODT
-    const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id;
+    // const safeName = student.full_name?.replace(/\s+/g, '_') || student.student_id; // removed for fixing duplicate name issue
+    const safeName = `${student.full_name?.replace(/\s+/g, '_') || 'student'}_${student.student_id}`;
     const newOdtPath = path.join(tempDir, `${safeName}.odt`);
     const zip = new yazl.ZipFile();
     const walkDir = async (dir, zipPath = '') => {
@@ -652,7 +653,7 @@ async function GenerateOdtFile() {
             };
 
             const configResponse = await fetch(
-                'https://demoschool-git-mkfeb09stdetailstemp-punit-diwans-projects.vercel.app/api/gettempletemetedata',
+                'https://demoschool.edusparsh.com/api/gettempletemetedata',
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -663,6 +664,8 @@ async function GenerateOdtFile() {
             if (configResponse.ok) {
                 const configData = await configResponse.json();
 
+
+
                 if (configData && configData.config_value) {
                     studentDetailsConfigFromApi =
                         typeof configData.config_value === 'object'
@@ -670,6 +673,7 @@ async function GenerateOdtFile() {
                             : configData.config_value;
 
                     console.log("✅ Config loaded from NEW template metadata API.");
+
                 } else {
                     console.warn("⚠️ New API returned no config_value. Will fallback.");
                 }
@@ -705,6 +709,7 @@ async function GenerateOdtFile() {
                     if (configData && configData.config_value) {
                         studentDetailsConfigFromApi = configData.config_value;
                         console.log("✅ Loaded config from OLD API.");
+
                     } else {
                         console.warn("⚠️ Old API also returned no config.");
                     }
@@ -760,13 +765,13 @@ async function GenerateOdtFile() {
         };
 
         // Determine which API to call. If we have specific students (Previous Year), use studentWiseMarks.
-        let fetchUrl = 'https://demoschool-git-mkfeb17weightagemax-punit-diwans-projects.vercel.app/api/cce_examv1/getMarks';
+        let fetchUrl = 'https://demoschool.edusparsh.com/api/cce_examv1/getMarks';
 
         if (studentIdsInput) {
             const sIds = studentIdsInput.split(',');
             marksPayload.student_ids = sIds;
             marksPayload.student_id = sIds; // Add this key as studentWiseMarks often expects 'student_id'
-            // fetchUrl = 'https://demoschool-git-mkfeb17weightagemax-punit-diwans-projects.vercel.app/api/cce_examv1/studentWiseMarks';
+            // fetchUrl = 'https://demoschool.edusparsh.com/api/cce_examv1/studentWiseMarks';
             fetchUrl = 'https://demoschool.edusparsh.com/api/cce_examv1/studentWiseMarks';
         }
 
@@ -800,7 +805,7 @@ async function GenerateOdtFile() {
 
         console.log("📡 Fetching marksheet config + transformed data...");
         // const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
-        const apiRes = await fetch('https://demoschool-git-mkfeb27grades-punit-diwans-projects.vercel.app/api/marksheetdataodt', {
+        const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -843,18 +848,27 @@ async function GenerateOdtFile() {
 
             if (dynamicDetailsConfig && typeof dynamicDetailsConfig === 'string') {
                 try {
-                    const config = JSON.parse(dynamicDetailsConfig);
-                    if (Array.isArray(config)) {
-                        config.forEach((item, index) => {
-                            const slotNumber = index + 1;
-                            if (item.label && item.key) {
-                                details[`label${slotNumber}`] = item.label;
-                                details[`value${slotNumber}`] = transformedData[item.key] || '';
-                            }
-                        });
-                    } else {
-                        console.warn('⚠️ Parsed dynamic config is not an array.');
+                    const parsedConfig = JSON.parse(dynamicDetailsConfig);
+
+                    // NEW API format
+                    let configArray = [];
+
+                    if (Array.isArray(parsedConfig)) {
+                        // Old API format
+                        configArray = parsedConfig;
+                    } else if (parsedConfig.fields && Array.isArray(parsedConfig.fields)) {
+                        // New API format
+                        configArray = parsedConfig.fields;
                     }
+
+                    configArray.forEach((item, index) => {
+                        const slotNumber = index + 1;
+
+                        if (item.label && item.key) {
+                            details[`label${slotNumber}`] = item.label;
+                            details[`value${slotNumber}`] = transformedData[item.key] || '';
+                        }
+                    });
                 } catch (e) {
                     console.warn(`⚠️ Could not parse dynamic details config: ${e.message}`);
                 }
@@ -875,7 +889,8 @@ async function GenerateOdtFile() {
                 console.log(`------------------------------------\n`);
             }
 
-            const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`;
+            // const fileSafeName = student.full_name?.replace(/\s+/g, '_') || `student_${Date.now()}`; // removed for fixing duplicate name issue
+            const fileSafeName = `${student.full_name?.replace(/\s+/g, '_') || 'student'}_${student.student_id}`;
             const odtReport = await carboneRender(modifiedOdtPath, dataForCarbone);
             const odtFilename = path.join(outputDir, `${fileSafeName}.odt`);
             await fs.writeFile(odtFilename, odtReport);
