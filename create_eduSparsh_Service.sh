@@ -12,6 +12,21 @@ response=$(curl -s "$API_URL" \
   -H "apikey: $API_KEY" \
   -H "Authorization: Bearer $API_KEY")
 
+
+
+generate_invoice_no() {
+    # Get current timestamp in seconds
+    local timestamp=$(date +%s)
+    
+    # Generate 4 random digits
+    local rand=$(shuf -i 1000-9999 -n 1)
+    
+    # Combine timestamp + random digits
+    local invoice_no="${timestamp}${rand}"
+    
+    echo "$invoice_no"
+}
+
 echo "$response" | jq -c '.[]' | while read -r project; do
 
     project_id=$(echo "$project" | jq -r '.id')
@@ -25,6 +40,36 @@ echo "$response" | jq -c '.[]' | while read -r project; do
         echo "No active service for $prj_name"
         continue
     fi
+    # Extract all installments into a variable
+    installments=$(echo "$active_service" | jq -c '.installments')
+    new_start_date=$(date -u -d "$end_date +1 day" +%Y-%m-%d)
+    new_year=$(date -u -d "$new_start_date" +%Y)
+
+    # echo "$installments"
+
+    new_year=$(date -u -d "$new_start_date" +%Y)
+
+    updated_installments=$(echo "$installments" | jq -c --arg new_start_date "$new_start_date" '
+    map(
+        .end_date |= (
+        # convert old date to timestamp
+        (strptime("%Y-%m-%dT%H:%M:%S%z") | mktime) as $old_ts |
+
+        # get base year difference
+        (strptime("%Y-%m-%dT%H:%M:%S%z")[0]) as $old_year |
+        ($new_start_date | strptime("%Y-%m-%d")[0]) as $new_year |
+
+        # adjust year safely
+        (strptime("%Y-%m-%dT%H:%M:%S%z")
+            | .[0] = $new_year
+            | mktime
+            | strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        )
+        )
+    )
+    ')
+
+    # echo "$updated_installments"
 
     end_date=$(echo "$active_service" | jq -r '.end_date')
     # Extract service amount as integer
@@ -145,6 +190,28 @@ echo "$response" | jq -c '.[]' | while read -r project; do
                         \"customer_id\": \"$customer_id\"
                     }"
             echo "Inserted into service_products."
+            echo "$updated_installments" | jq -c '.[]' | while read -r inst; do
+            new_invoice_no=$(generate_invoice_no)
+            echo "Generated Invoice No: $new_invoice_no"
+            curl -s -X POST "https://studio.maitretech.com/rest/v1/installments" \
+            -H "apikey: $API_KEY" \
+            -H "Authorization: Bearer $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{
+                    \"service_id\": \"$new_service_id\",
+                    \"name\": $(echo "$inst" | jq -r '.name' | jq -R .),
+                    \"amount\": $(echo "$inst" | jq '.amount'),
+                    \"amount_wo_tax\": $(echo "$inst" | jq '.amount_wo_tax'),
+                    \"invoice_no\": \"$new_invoice_no\",
+                    \"tax\": $(echo "$inst" | jq '.tax'),
+                    \"end_date\": $(echo "$inst" | jq '.end_date'),
+                    \"is_paid\": false,
+                    \"customer_id\": \"$customer_id\",
+                    \"description\": $(echo "$inst" | jq -r '.description' | jq -R .),
+                    \"invoice_name_type\": $(echo "$inst" | jq -r '.invoice_name_type' | jq -R .)
+                }"
+            done
+            
         else
             echo "Service creation failed! Response: $http_body"
             continue
