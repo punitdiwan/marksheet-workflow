@@ -216,7 +216,8 @@ async function getMarks() {
     const API_URL = process.env.API_URL;
     const group = groupid?.split(",");
     const batch = batchId?.split(",");
-    const url = API_URL;
+    // const url = API_URL;
+    const url = "https://schoolscoop-supa-git-mkmar2-d5b2f9-school-scoop-indias-projects.vercel.app/api/cce_examv1/getMarksforpatrak"
 
     const data = {
         "_school": _school,
