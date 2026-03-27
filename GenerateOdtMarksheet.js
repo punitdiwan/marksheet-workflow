@@ -805,7 +805,7 @@ async function GenerateOdtFile() {
 
         console.log("📡 Fetching marksheet config + transformed data...");
         // const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
-        const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
+        const apiRes = await fetch('https://schoolscoop-supa-git-mkmar2-f89310-school-scoop-indias-projects.vercel.app/api/marksheetdataodt', {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
