@@ -17,6 +17,12 @@ jobs:
       - name: Give executive permissions
         run: |
           chmod +x ./check_installments.sh
+          chmod +x ./activate_upcomming_service.sh
+
+      - name: Run the Upcomming Service Script
+        run: |
+          ./activate_upcomming_service.sh
+
       - name: Run the Installments Check Script
         run: |
           ./check_installments.sh
