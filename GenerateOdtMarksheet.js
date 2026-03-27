@@ -812,6 +812,8 @@ async function GenerateOdtFile() {
             ? 'https://schoolscoop-supa-git-mkmar2-f89310-school-scoop-indias-projects.vercel.app/api/marksheetdataodt'
             : 'https://demoschool.edusparsh.com/api/marksheetdataodt';
 
+
+        console.log(`Using marksheet API URL: ${marksheetApiUrl}`);
         const apiRes = await fetch(marksheetApiUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
