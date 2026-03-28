@@ -16,71 +16,92 @@ jobs:
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Check token expiration
-        id: check
-        env:
-          FB_USER_ACCESS_TOKEN: ${{ secrets.FB_USER_ACCESS_TOKEN }}
-          FB_APP_ID: ${{ secrets.FB_APP_ID }}
-          FB_APP_SECRET: ${{ secrets.FB_APP_SECRET }}
-        run: |
-          echo "🔑 Fetching App Access Token dynamically..."
-
-          APP_ACCESS_TOKEN=$(curl -s \
-            "https://graph.facebook.com/oauth/access_token?client_id=${FB_APP_ID}&client_secret=${FB_APP_SECRET}&grant_type=client_credentials" \
-            | jq -r '.access_token')
-
-          if [ -z "$APP_ACCESS_TOKEN" ] || [ "$APP_ACCESS_TOKEN" = "null" ]; then
-            echo "❌ Failed to get App Access Token"
-            exit 1
-          fi
-
-          RESPONSE=$(curl -s \
-            "https://graph.facebook.com/debug_token?input_token=${FB_USER_ACCESS_TOKEN}&access_token=${APP_ACCESS_TOKEN}")
-
-          echo "$RESPONSE" | jq '.data | {is_valid, expires_at, issued_at, type}'
-
-          EXPIRES_AT=$(echo "$RESPONSE" | jq -r '.data.expires_at')
-
-          if [ "$EXPIRES_AT" = "0" ]; then
-            echo "✅ Non-expiring token detected — rotation not required"
-            echo "days_left=99999" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          NOW=$(date +%s)
-          DAYS_LEFT=$(( (EXPIRES_AT - NOW) / 86400 ))
-
-          echo "days_left=$DAYS_LEFT" >> $GITHUB_OUTPUT
-          echo "⏳ Token expires in $DAYS_LEFT days"
-
-      - name: Refresh token if expiring soon
-        if: steps.check.outputs.days_left < 30
+      - name: Check and refresh token
         env:
           FB_USER_ACCESS_TOKEN: ${{ secrets.FB_USER_ACCESS_TOKEN }}
           FB_APP_ID: ${{ secrets.FB_APP_ID }}
           FB_APP_SECRET: ${{ secrets.FB_APP_SECRET }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "🔄 Token expiring soon, refreshing..."
+          echo "🔑 Fetching App Access Token..."
+          APP_ACCESS_TOKEN=$(curl -s \
+            "https://graph.facebook.com/oauth/access_token?client_id=${FB_APP_ID}&client_secret=${FB_APP_SECRET}&grant_type=client_credentials" \
+            | jq -r '.access_token')
 
-          RESPONSE=$(curl -s \
-            "https://graph.facebook.com/oauth/access_token \
-            ?grant_type=fb_exchange_token \
-            &client_id=${FB_APP_ID} \
-            &client_secret=${FB_APP_SECRET} \
-            &fb_exchange_token=${FB_USER_ACCESS_TOKEN}")
-
-          NEW_TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
-
-          if [ -z "$NEW_TOKEN" ] || [ "$NEW_TOKEN" = "null" ]; then
-            echo "❌ Failed to refresh token"
+          if [ -z "$APP_ACCESS_TOKEN" ] || [ "$APP_ACCESS_TOKEN" = "null" ]; then
+            echo "❌ Failed to get App Access Token — check FB_APP_ID and FB_APP_SECRET secrets"
             exit 1
           fi
 
+          echo "🔍 Inspecting token..."
+          RESPONSE=$(curl -s \
+            "https://graph.facebook.com/debug_token?input_token=${FB_USER_ACCESS_TOKEN}&access_token=${APP_ACCESS_TOKEN}")
+
+          echo "$RESPONSE" | jq '.data | {is_valid, expires_at, issued_at, type}'
+
+          IS_VALID=$(echo "$RESPONSE" | jq -r '.data.is_valid')
+          if [ "$IS_VALID" != "true" ]; then
+            echo "❌ Token is already invalid — manual re-authentication required!"
+            echo ""
+            echo "👉 Steps to renew:"
+            echo "   1. Go to https://developers.facebook.com/tools/explorer"
+            echo "   2. Generate a new User Token with required permissions"
+            echo "   3. Extend it at https://developers.facebook.com/tools/debug/accesstoken"
+            echo "   4. Update secret: GitHub → Settings → Secrets → FB_USER_ACCESS_TOKEN"
+            exit 1
+          fi
+
+          EXPIRES_AT=$(echo "$RESPONSE" | jq -r '.data.expires_at')
+          NOW=$(date +%s)
+
+          if [ "$EXPIRES_AT" = "0" ]; then
+            echo "⚠️  expires_at is 0 — estimating expiry from issued_at (90-day window)..."
+            ISSUED_AT=$(echo "$RESPONSE" | jq -r '.data.issued_at')
+            AGE_DAYS=$(( (NOW - ISSUED_AT) / 86400 ))
+            DAYS_LEFT=$(( 90 - AGE_DAYS ))
+            echo "📅 Token is $AGE_DAYS days old — estimated $DAYS_LEFT days remaining"
+
+            if [ "$DAYS_LEFT" -le 0 ]; then
+              echo "❌ Token has likely expired (issued $AGE_DAYS days ago, exceeded 90-day window)!"
+              echo ""
+              echo "👉 Steps to renew:"
+              echo "   1. Go to https://developers.facebook.com/tools/explorer"
+              echo "   2. Generate a new User Token with required permissions"
+              echo "   3. Extend it at https://developers.facebook.com/tools/debug/accesstoken"
+              echo "   4. Update secret: GitHub → Settings → Secrets → FB_USER_ACCESS_TOKEN"
+              exit 1
+            fi
+          else
+            DAYS_LEFT=$(( (EXPIRES_AT - NOW) / 86400 ))
+            echo "⏳ Token expires in $DAYS_LEFT days"
+          fi
+
+          if [ "$DAYS_LEFT" -ge 30 ]; then
+            echo "✅ Token is healthy — $DAYS_LEFT days remaining, no action needed"
+            exit 0
+          fi
+
+          echo "🔄 Token has $DAYS_LEFT days left — refreshing now..."
+          REFRESH_RESPONSE=$(curl -s \
+            "https://graph.facebook.com/oauth/access_token?grant_type=fb_exchange_token&client_id=${FB_APP_ID}&client_secret=${FB_APP_SECRET}&fb_exchange_token=${FB_USER_ACCESS_TOKEN}")
+
+          NEW_TOKEN=$(echo "$REFRESH_RESPONSE" | jq -r '.access_token')
+
+          if [ -z "$NEW_TOKEN" ] || [ "$NEW_TOKEN" = "null" ]; then
+            echo "❌ Failed to refresh token. Facebook response:"
+            echo "$REFRESH_RESPONSE" | jq .
+            echo ""
+            echo "👉 Steps to renew manually:"
+            echo "   1. Go to https://developers.facebook.com/tools/explorer"
+            echo "   2. Generate a new User Token with required permissions"
+            echo "   3. Extend it at https://developers.facebook.com/tools/debug/accesstoken"
+            echo "   4. Update secret: GitHub → Settings → Secrets → FB_USER_ACCESS_TOKEN"
+            exit 1
+          fi
+
+          echo "💾 Saving new token to GitHub secrets..."
           gh secret set FB_USER_ACCESS_TOKEN --body "$NEW_TOKEN"
 
-          echo "✅ GitHub secret updated with new token"
-
-      - name: Token still valid
-        if: steps.check.outputs.days_left >= 30
-        run: echo "✅ Token valid for more than 30 days — no action needed"
+          echo ""
+          echo "✅ Token successfully refreshed and GitHub secret updated!"
+          echo "🔁 New 90-day window starts from today"
