@@ -44,7 +44,7 @@ jobs:
             echo "Checking schema: $noCR"
 
             # Check if schema exists
-            exists=$(PGPASSWORD=your-super-secret-and-long-postgres-password psql -h studio.maitretech.com -p 5432 -U postgres -d medisparsh -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='${noCR}'")
+            exists=$(PGPASSWORD=${{ secrets.DB_PASSWORD }} psql -h studio.maitretech.com -p 5432 -U postgres -d medisparsh -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='${noCR}'")
 
             if [ "$exists" != "1" ]; then
               echo "Schema $noCR does not exist. Skipping..."
@@ -53,7 +53,7 @@ jobs:
 
             echo "Backing up schema: $noCR"
 
-            PGPASSWORD= your-super-secret-and-long-postgres-password pg_dump \
+            PGPASSWORD=${{ secrets.DB_PASSWORD }} pg_dump \
               -h studio.maitretech.com -p 5432 -U postgres -d medisparsh \
               --schema="${noCR}" \
               -f "${noCR}_${date}.sql"
