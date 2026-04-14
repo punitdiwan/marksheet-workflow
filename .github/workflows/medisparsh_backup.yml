@@ -1,19 +1,16 @@
 name: Backup Script for Medisparsh
-
 on:
   workflow_dispatch:
     branches: [main]
-  # schedule:
-  #   - cron: "30 22 * * *"
+  schedule:
+    - cron: "30 10 * * *"
 jobs:
-  backup-pipeline:
-    name: Backup Script for Medisparsh
+  upload:
     runs-on: ubuntu-latest
-
-
+    # runs-on: self-hosted
     steps:
-      - name: Checkout current repo
-        uses: actions/checkout@v4
+      - name: Checkout the code
+        uses: actions/checkout@master
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -27,9 +24,23 @@ jobs:
       - name: Install DO Space
         run: npm install -g spaces-cli
 
-      - name: Give executive permissions
+      - name: Get Project List
         run: |
-          chmod +x ./backup.sh
-      - name: Run the Installments Check Script
+          curl -s -X GET "https://abc.medisparsh.com/api/createOrg" \
+            -H "Authorization: Bearer FaTvIeduiInc1nrBUILnlX1WpJUmkO6AG8NMp916s2B8Zv5eDymCaGX1Z94=" \
+            | jq -r '.data[]?.slug // empty' > $(pwd)/project.txt
+        
+      - name: Taking backup of Schema
         run: |
-          ./backup.sh
+          lines=`cat $(pwd)/project.txt`
+          date=$(date '+%Y-%m-%dT-%H:%M:%S')
+          onlyDate=$(date '+%Y-%m-%d')
+          mkdir -p schema_backup/${date} 
+          for schema in $lines; do
+            noCR=$(echo $schema | sed -e 's/\r//g')
+            PGPASSWORD=your-super-secret-and-long-postgres-password pg_dump -h studio.maitretech.com -p 5432 -U postgres -d postgres --schema ${noCR}  -f ${noCR}_${date}.sql 
+            spaces-cli up -s medisparsh -r blr1 -i DO00Z6BQLU76298YFU2G -k l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo -t medisparsh/${noCR}/${onlyDate}  ${noCR}_${date}.sql
+          done
+
+      - name: Print Current Working Directory Path
+        run: pwd
