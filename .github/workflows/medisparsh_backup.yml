@@ -54,7 +54,7 @@ jobs:
             echo "Backing up schema: $noCR"
 
             PGPASSWORD= your-super-secret-and-long-postgres-password pg_dump \
-              -h studio.maitretech.com -p 5432 -U postgres -d postgres \
+              -h studio.maitretech.com -p 5432 -U postgres -d medisparsh \
               --schema="${noCR}" \
               -f "${noCR}_${date}.sql"
 
