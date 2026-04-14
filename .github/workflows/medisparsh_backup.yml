@@ -5,66 +5,72 @@ on:
   schedule:
     - cron: "30 10 * * *"
 jobs:
-  upload:
+  backup_schema_medisparsh:
+    name: Backup Script for Medisparsh
     runs-on: ubuntu-latest
-    # runs-on: self-hosted
+
     steps:
-      - name: Checkout the code
-        uses: actions/checkout@master
-
-      - name: Install Node
-        uses: actions/setup-node@v4
+      - name: Dump and upload schemas
+        uses: appleboy/ssh-action@v1
         with:
-          node-version: 18
-      - name: Install postgres cli
-        run: |
-          sudo apt-get update
-          sudo apt-get install postgresql-client
+          host: con-in.maitretech.com
+          username: root
+          key: ${{ secrets.SELF_HOST_SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            set -e
+            echo "🚀 Starting schema exposure job..."
+            ############################
+            # Variables
+            ############################
+            DB_HOST="studio.maitretech.com"
+            DB_NAME="medisparsh"
+            DB_USER="postgres"
+            DB_PORT="5432"
 
-      - name: Install DO Space
-        run: npm install -g spaces-cli
 
-      - name: Get Project List
-        run: |
-          curl -s -X GET "https://abc.medisparsh.com/api/createOrg" \
+            DATE_TIME=$(date '+%Y-%m-%dT-%H:%M:%S')
+            ONLY_DATE=$(date '+%Y-%m-%d')
+            WORKDIR="$(pwd)"
+
+
+            ############################
+            # Fetch schemas list
+            ############################
+            echo "📥 Fetching schema list..."
+            curl -s -X GET "https://abc.medisparsh.com/api/createOrg" \
             -H "Authorization: Bearer FaTvIeduiInc1nrBUILnlX1WpJUmkO6AG8NMp916s2B8Zv5eDymCaGX1Z94=" \
             | jq -r '.data[]?.slug // empty' > $(pwd)/project.txt
-        
-      - name: Taking backup of Schema
-        run: |
-          lines=$(cat $(pwd)/project.txt)
-          date=$(date '+%Y-%m-%dT-%H:%M:%S')
-          onlyDate=$(date '+%Y-%m-%d')
 
-          mkdir -p schema_backup/${date}
 
-          for schema in $lines; do
-            noCR=$(echo "$schema" | sed -e 's/\r//g')
+            ############################
+            # Dump & upload dynamic schemas
+            ############################
+            while read -r schema; do
+              schema=$(echo "$schema" | sed 's/\r//g')
 
-            echo "Checking schema: $noCR"
+              echo "🗄️ Dumping schema: ${schema}"
+              # Check if schema exists
+              exists=$(PGPASSWORD=${{ secrets.DB_PASSWORD }} psql -h studio.maitretech.com -p 5432 -U postgres -d medisparsh -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='${schema}'")
 
-            # Check if schema exists
-            exists=$(PGPASSWORD=${{ secrets.DB_PASSWORD }} psql -h studio.maitretech.com -p 5432 -U postgres -d medisparsh -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='${noCR}'")
+              if [ "$exists" != "1" ]; then
+                echo "Schema $schema does not exist. Skipping..."
+                continue
+              fi
 
-            if [ "$exists" != "1" ]; then
-              echo "Schema $noCR does not exist. Skipping..."
-              continue
-            fi
+              PGPASSWORD=${{ secrets.DB_PASSWORD }} pg_dump -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" \
+                --schema "${schema}" \
+                -f "${schema}_${DATE_TIME}.sql"
 
-            echo "Backing up schema: $noCR"
+              s3cmd put ${schema}_${DATE_TIME}.sql s3://medisparsh/medisparsh/${schema}/${ONLY_DATE}/
 
-            PGPASSWORD=${{ secrets.DB_PASSWORD }} pg_dump \
-              -h studio.maitretech.com -p 5432 -U postgres -d medisparsh \
-              --schema="${noCR}" \
-              -f "${noCR}_${date}.sql"
+              echo "☁️ Uploaded schema: ${schema}"
+            done < "${WORKDIR}/project.txt"
 
-            spaces-cli up \
-              -s medisparsh -r blr1 \
-              -i DO00Z6BQLU76298YFU2G \
-              -k l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo \
-              -t medisparsh/${noCR}/${onlyDate} \
-              "${noCR}_${date}.sql"
-          done
+            ############################
+            # Cleanup
+            ############################
+            rm -f project.txt *.sql
 
-      - name: Print Current Working Directory Path
-        run: pwd
+            echo "🧹 Cleanup completed"
+            echo "🎉 All schema dumps and uploads completed successfully!"
