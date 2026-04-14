@@ -44,7 +44,7 @@ jobs:
             echo "Checking schema: $noCR"
 
             # Check if schema exists
-            exists=$(PGPASSWORD=${{ secrets.DB_PASSWORD }} psql -h studio.maitretech.com -p 5432 -U postgres -d postgres -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='${noCR}'")
+            exists=$(PGPASSWORD=your-super-secret-and-long-postgres-password psql -h studio.maitretech.com -p 5432 -U postgres -d medisparsh -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='${noCR}'")
 
             if [ "$exists" != "1" ]; then
               echo "Schema $noCR does not exist. Skipping..."
