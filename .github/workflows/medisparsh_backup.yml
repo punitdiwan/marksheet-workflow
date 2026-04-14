@@ -32,14 +32,38 @@ jobs:
         
       - name: Taking backup of Schema
         run: |
-          lines=`cat $(pwd)/project.txt`
+          lines=$(cat $(pwd)/project.txt)
           date=$(date '+%Y-%m-%dT-%H:%M:%S')
           onlyDate=$(date '+%Y-%m-%d')
-          mkdir -p schema_backup/${date} 
+
+          mkdir -p schema_backup/${date}
+
           for schema in $lines; do
-            noCR=$(echo $schema | sed -e 's/\r//g')
-            PGPASSWORD=your-super-secret-and-long-postgres-password pg_dump -h studio.maitretech.com -p 5432 -U postgres -d postgres --schema ${noCR}  -f ${noCR}_${date}.sql 
-            spaces-cli up -s medisparsh -r blr1 -i DO00Z6BQLU76298YFU2G -k l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo -t medisparsh/${noCR}/${onlyDate}  ${noCR}_${date}.sql
+            noCR=$(echo "$schema" | sed -e 's/\r//g')
+
+            echo "Checking schema: $noCR"
+
+            # Check if schema exists
+            exists=$(PGPASSWORD=${{ secrets.DB_PASSWORD }} psql -h studio.maitretech.com -p 5432 -U postgres -d postgres -tAc "SELECT 1 FROM information_schema.schemata WHERE schema_name='${noCR}'")
+
+            if [ "$exists" != "1" ]; then
+              echo "Schema $noCR does not exist. Skipping..."
+              continue
+            fi
+
+            echo "Backing up schema: $noCR"
+
+            PGPASSWORD= your-super-secret-and-long-postgres-password pg_dump \
+              -h studio.maitretech.com -p 5432 -U postgres -d postgres \
+              --schema="${noCR}" \
+              -f "${noCR}_${date}.sql"
+
+            spaces-cli up \
+              -s medisparsh -r blr1 \
+              -i DO00Z6BQLU76298YFU2G \
+              -k l3XB9ck+U9tvwixHGxMopTFVWSJlwxxpOlNJhvlQhIo \
+              -t medisparsh/${noCR}/${onlyDate} \
+              "${noCR}_${date}.sql"
           done
 
       - name: Print Current Working Directory Path
