@@ -56,13 +56,13 @@ jobs:
           pip install -r requirements.txt
 
       # 6️⃣ Get project list from Supabase REST API
-      - name: Get Project List
-        run: |
-          echo "Fetching active school projects..."
-          curl -s "https://studio.maitretech.com/rest/v1/projects?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE&is_trial=eq.false&is_disabled=eq.false&order=created_at.desc" \
-            | jq -r '.[] | .prj_name' > project.txt
-          echo "✅ Created project.txt"
-          cat project.txt
+      # - name: Get Project List
+      #   run: |
+      #     echo "Fetching active school projects..."
+      #     curl -s "https://studio.maitretech.com/rest/v1/projects?apikey=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE&is_trial=eq.false&is_disabled=eq.false&order=created_at.desc" \
+      #       | jq -r '.[] | .prj_name' > project.txt
+      #     echo "✅ Created project.txt"
+      #     cat project.txt
 
       - name: Check for Secrets
         run: |
