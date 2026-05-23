@@ -36,9 +36,9 @@ jobs:
       matrix: ${{ fromJson(needs.fetch-organizations.outputs.matrix) }}
       
     steps:
-      - name: Send Flow-Up Request for ${{ matrix.slug }}
+      - name: Send Follow-Up Request for ${{ matrix.slug }}
         run: |
-          curl -X POST "https://abc.medisparsh.com/api/cron/flow-up" \
+          curl -X POST "https://abc.medisparsh.com/api/cron/follow-up" \
           -H "Content-Type: application/json" \
           -d '{
             "hospital_id": "${{ matrix.hospital_id }}",
