@@ -1,0 +1,47 @@
+name: Dynamic Hospital Flow-Up Cron
+
+on:
+  schedule:
+    # Runs every day at midnight UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+    # Allows manual testing from the Actions tab
+
+jobs:
+  # JOB 1: Fetch all organizations and parse ID, Slug, and Phone
+  fetch-organizations:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Get Organizations from API
+        id: set-matrix
+        run: |
+          # Fetch organization data using your bearer token
+          RESPONSE=$(curl --silent --location 'https://abc.medisparsh.com/api/createOrg' \
+            --header 'Authorization: Bearer FsLgruRrL2Arl5JZBF6i8BfHEi7TVY9U')
+          
+          # Extracts hospital_id, slug, and phone (defaults to "" if phone is missing)
+          MATRIX_JSON=$(echo "$RESPONSE" | jq -c '{include: [.data[] | {hospital_id: .id, slug: .slug, phoneNumber: (.metadata.phone // "")}]}')
+          
+          # Save this array to the GitHub output environment
+          echo "matrix=$MATRIX_JSON" >> $GITHUB_OUTPUT
+
+  # JOB 2: Run the flow-up API for every organization dynamically
+  trigger-flow-up:
+    needs: fetch-organizations
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # Keeps running other hospitals even if one fails
+      matrix: ${{ fromJson(needs.fetch-organizations.outputs.matrix) }}
+      
+    steps:
+      - name: Send Flow-Up Request for ${{ matrix.slug }}
+        run: |
+          curl -X POST "https://abc.medisparsh.com/api/cron/flow-up" \
+          -H "Content-Type: application/json" \
+          -d '{
+            "hospital_id": "${{ matrix.hospital_id }}",
+            "slug": "${{ matrix.slug }}",
+            "phoneNumber": "${{ matrix.phoneNumber }}"
+          }'

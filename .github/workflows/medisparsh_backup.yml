@@ -39,7 +39,7 @@ jobs:
             ############################
             echo "📥 Fetching schema list..."
             curl -s -X GET "https://abc.medisparsh.com/api/createOrg" \
-            -H "Authorization: Bearer FaTvIeduiInc1nrBUILnlX1WpJUmkO6AG8NMp916s2B8Zv5eDymCaGX1Z94=" \
+            -H "Authorization: Bearer FsLgruRrL2Arl5JZBF6i8BfHEi7TVY9U" \
             | jq -r '.data[]?.slug // empty' > $(pwd)/project.txt
 
 
