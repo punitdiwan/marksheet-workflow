@@ -1,4 +1,4 @@
-name: Dynamic Hospital Flow-Up Cron
+name: Dynamic Hospital Follow-Up Cron
 
 on:
   schedule:
