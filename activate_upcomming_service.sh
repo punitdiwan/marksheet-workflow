@@ -12,9 +12,10 @@ response=$(curl -s "$API_URL" \
   -H "apikey: $API_KEY" \
   -H "Authorization: Bearer $API_KEY")
 
+# Array to hold schools to disable
+SCHOOLS_TO_DISABLE=()
 
-
-echo "$response" | jq -c '.[]' | while read -r project; do
+while read -r project; do
     project_id=$(echo "$project" | jq -r '.id')
     prj_name=$(echo "$project" | jq -r '.prj_name')
     customer_id=$(echo "$project" | jq -r '.customer_id')  # adjust if different field
@@ -47,6 +48,19 @@ echo "$response" | jq -c '.[]' | while read -r project; do
 
     if [[ "$end_date" < "$TODAY" ]]; then
         echo "Status: EXPIRED SERVICE"
+         SCHOOLS_TO_DISABLE+=("$prj_name")
+
+        # PATCH active service -> inactive
+        curl -s -X PATCH "https://studio.maitretech.com/rest/v1/service?id=eq.$active_service_id" \
+             -H "apikey: $API_KEY" \
+             -H "Authorization: Bearer $API_KEY" \
+             -H "Content-Type: application/json" \
+             -d '{
+                "is_active": false,
+                "status": "inactive"
+                }'
+
+
 
         if [ -n "$upcoming_service" ]; then
             up_amount=$(echo "$upcoming_service" | jq -r '.amount | tonumber')
@@ -58,27 +72,18 @@ echo "$response" | jq -c '.[]' | while read -r project; do
             if [ "$up_total" -ge "$up_amount_with_discount" ]; then
                 echo "Upcoming service is fully paid. Updating statuses..."
 
-                # PATCH active service -> inactive
-                curl -s -X PATCH "https://studio.maitretech.com/rest/v1/service?id=eq.$active_service_id" \
-                     -H "apikey: $API_KEY" \
-                     -H "Authorization: Bearer $API_KEY" \
-                     -H "Content-Type: application/json" \
-                     -d '{
-                        "is_active": false,
-                        "status": "inactive"
-                        }'
 
-                # PATCH upcoming service -> active
-                curl -s -X PATCH "https://studio.maitretech.com/rest/v1/service?id=eq.$upcoming_service_id" \
-                     -H "apikey: $API_KEY" \
-                     -H "Authorization: Bearer $API_KEY" \
-                     -H "Content-Type: application/json" \
-                     -d '{
-                        "is_active": true,
-                        "status": "active"
-                        }'
+                # # PATCH upcoming service -> active
+                # curl -s -X PATCH "https://studio.maitretech.com/rest/v1/service?id=eq.$upcoming_service_id" \
+                #      -H "apikey: $API_KEY" \
+                #      -H "Authorization: Bearer $API_KEY" \
+                #      -H "Content-Type: application/json" \
+                #      -d '{
+                #         "is_active": true,
+                #         "status": "active"
+                #         }'
 
-                echo "Active service marked inactive, upcoming service marked active."
+                # echo "Active service marked inactive, upcoming service marked active."
 
             else
                 echo "Upcoming service exists but is NOT fully paid. Cannot activate."
@@ -91,6 +96,23 @@ echo "$response" | jq -c '.[]' | while read -r project; do
         echo "Status: ACTIVE SERVICE (not expiring soon)"
     fi
 
-done
+done < <(echo "$response" | jq -c '.[]')
+
+echo "${SCHOOLS_TO_DISABLE[@]}"
+# Call API if there are schools to disable
+if [ ${#SCHOOLS_TO_DISABLE[@]} -gt 0 ]; then
+  echo "Calling disable-schools API for ${#SCHOOLS_TO_DISABLE[@]} schools..."
+  
+  # Convert Bash array to JSON array
+  SCHOOLS_JSON=$(printf '%s\n' "${SCHOOLS_TO_DISABLE[@]}" | jq -R . | jq -s .)
+
+  curl -X POST "https://jnpsbhopal.edusparsh.com/api/disableSchool" \
+       -H "Content-Type: application/json" \
+       -d "{\"schoolNames\": $SCHOOLS_JSON}"
+
+   
+else
+  echo "No schools have expired installments. Nothing to disable."
+fi
 
 echo "Done."
