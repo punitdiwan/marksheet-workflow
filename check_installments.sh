@@ -62,14 +62,22 @@ echo "Checking installments expiry..."
 
 for FILE in "$OUTPUT_DIR"/*.json; do
   SCHOOL_NAME=$(basename "$FILE" .json)
+
   EXPIRED=$(jq -r --arg today "$TODAY_EPOCH" '
     (.installments // [])[]
-    | select(.end_date != null)
-    | (.end_date | sub("\\+00:00$"; "Z") | fromdateiso8601) as $end_epoch
-    | (($end_epoch - ($today | tonumber))/86400 | floor) as $days_remaining
-    | select($days_remaining < 0)   # <-- strictly less than 0
+    | (
+        if (.extension_date != null and .extension_date != "")
+        then (.extension_date | strptime("%Y-%m-%d") | mktime)
+        else (.end_date
+              | sub("\\+00:00$"; "Z")
+              | fromdateiso8601)
+        end
+      ) as $expiry_epoch
+    | (($expiry_epoch - ($today | tonumber))/86400 | floor) as $days_remaining
+    | select($days_remaining < 0)
     | .name
   ' "$FILE")
+
   if [[ -n "$EXPIRED" ]]; then
     echo "❌ Installments expired for school: $SCHOOL_NAME -> $EXPIRED"
     SCHOOLS_TO_DISABLE+=("$SCHOOL_NAME")
