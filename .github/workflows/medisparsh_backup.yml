@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     branches: [main]
   schedule:
-    - cron: "30 10 * * *"
+    - cron: "30 9 * * *"
 jobs:
   backup_schema_medisparsh:
     name: Backup Script for Medisparsh
