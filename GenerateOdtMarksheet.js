@@ -807,7 +807,7 @@ async function GenerateOdtFile() {
         // const apiRes = await fetch('https://demoschool.edusparsh.com/api/marksheetdataodt', {
 
         // --- MINIMUM CHANGE: Conditional URL based on SCHOOL_ID ---
-        const specialSchools = ['seedlingsschool', 'technicaltesting'];
+        const specialSchools = ['seedlingsschool'];
         const marksheetApiUrl = specialSchools.includes(schoolId)
             ? 'https://schoolscoop-supa-git-mkmar2-f89310-school-scoop-indias-projects.vercel.app/api/marksheetdataodt'
             : 'https://demoschool.edusparsh.com/api/marksheetdataodt';
