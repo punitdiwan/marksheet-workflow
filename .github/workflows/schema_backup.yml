@@ -51,7 +51,7 @@ jobs:
             for CORE_SCHEMA in auth public; do
               echo "🗄️ Dumping schema: ${CORE_SCHEMA}"
 
-              PGPASSWORD=your-super-secret-and-long-postgres-password \
+              PGPASSWORD=${{ secrets.DB_PASSWORD }} \
               pg_dump -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" \
                 --schema "${CORE_SCHEMA}" \
                 -f "${CORE_SCHEMA}_${DATE_TIME}.sql"
@@ -69,7 +69,7 @@ jobs:
 
               echo "🗄️ Dumping schema: ${schema}"
 
-              PGPASSWORD=your-super-secret-and-long-postgres-password \
+              PGPASSWORD=${{ secrets.DB_PASSWORD }} \
               pg_dump -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" \
                 --schema "${schema}" \
                 -f "${schema}_${DATE_TIME}.sql"
