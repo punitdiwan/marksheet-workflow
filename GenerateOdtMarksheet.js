@@ -435,32 +435,66 @@ async function findImageFilename(contentXmlPath, picturesDir, frameName) {
 
         const textContent = parsedXml['office:document-content']?.['office:body']?.['office:text'] || {};
         const drawFrames = findFrames(textContent);
-        // console.log(`DEBUG: Found ${drawFrames.length} draw:frame elements`);
 
         for (const frame of drawFrames) {
-            if (frame['draw:name'] === frameName && frame['draw:image']) {
-                const image = frame['draw:image'];
+            const frameNameValue = frame['draw:name'];
+            const image = frame['draw:image'];
+            if (frameNameValue === frameName && image) {
                 const href = image['xlink:href'];
-                // console.log(`DEBUG: Found draw:image with draw:name="${frameName}", href=${href}`);
                 if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
                     const filename = href.replace('Pictures/', '');
                     const filePath = path.join(picturesDir, filename);
                     try {
                         await fs.access(filePath);
-                        // console.log(`DEBUG: Confirmed image file exists: ${filePath}`);
                         return filename;
                     } catch (err) {
                         console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory:`, err.message);
                     }
                 }
             }
+            if (frameNameValue === frameName) {
+                return `${frameName}.png`;
+            }
         }
 
-        // console.warn(`⚠️ No image with draw:name="${frameName}" found in content.xml.`);
         return null;
     } catch (err) {
         console.error(`❌ Failed to parse content.xml or read Pictures directory for ${frameName}:`, err);
         return null;
+    }
+}
+
+async function ensureFrameImageExists(contentXmlPath, frameName, targetFilename) {
+    try {
+        let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+        const escapedFrameName = frameName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const frameRegex = new RegExp(`<draw:frame\\b(?=[^>]*\\b(?:draw:name|name)=["']?${escapedFrameName}["']?)[^>]*>([\\s\\S]*?)<\\/draw:frame>`, 'i');
+        const frameMatch = contentXml.match(frameRegex);
+
+        if (!frameMatch) {
+            console.warn(`⚠️ No frame named "${frameName}" found in content.xml. Chart injection skipped.`);
+            return false;
+        }
+
+        const innerXml = frameMatch[1];
+        const imageTagPattern = /<draw:image\b[^>]*xlink:href=["'][^"']+["'][^>]*\s*\/>/i;
+
+        if (imageTagPattern.test(innerXml)) {
+            const newImageHref = `Pictures/${targetFilename}`;
+            const updatedInnerXml = innerXml.replace(/xlink:href=["'][^"']+["']/i, `xlink:href="${newImageHref}"`);
+            contentXml = contentXml.replace(frameMatch[1], updatedInnerXml);
+            await fs.writeFile(contentXmlPath, contentXml);
+            return true;
+        }
+
+        const imageInsert = `\n            <draw:image xlink:href="Pictures/${targetFilename}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/>\n        `;
+        const updatedFrame = frameMatch[0].replace(/<\/draw:frame>\s*$/i, `${imageInsert}</draw:frame>`);
+        contentXml = contentXml.replace(frameMatch[0], updatedFrame);
+        await fs.writeFile(contentXmlPath, contentXml);
+        return true;
+    } catch (err) {
+        console.warn(`⚠️ Failed to ensure image is injected into frame "${frameName}":`, err.message);
+        return false;
     }
 }
 
@@ -566,14 +600,12 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir, 
     for (const replacement of imageReplacements) {
         const { frameName, url, description } = replacement;
 
-        if (!url || !String(url).startsWith("http")) {
-            // console.log(`ℹ️ Skipping ${description} (${frameName}): No valid URL provided.`);
+        if (!url || (!String(url).startsWith("http") && !String(url).startsWith("file://") && !String(url).startsWith("data:"))) {
             continue;
         }
 
-        const targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName);
+        const targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName) || `${frameName}.png`;
         if (!targetFilename) {
-            // console.log(`ℹ️ Skipping ${description} (${frameName}): Frame not found in the template.`);
             continue;
         }
 
@@ -588,6 +620,7 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir, 
         try {
             const imagePath = path.join(picturesDir, targetFilename);
             await fs.writeFile(imagePath, imageBuffer);
+            await ensureFrameImageExists(contentXmlPath, frameName, targetFilename);
             console.log(`✅ Replaced ${description} (${frameName})`);
             anyImageReplaced = true;
         } catch (writeError) {
