@@ -367,11 +367,11 @@ function extractGroupedChartValues(subject = {}) {
 
 function buildStudentBarChartSvg(subjects = []) {
     const series = [
-        { name: 'PT I', color: '#2d6bba' },
+        { name: 'PT I', color: '#3f6fb5' },
         { name: 'TERM I', color: '#f28c28' },
-        { name: 'PT II', color: '#1ea76a' },
-        { name: 'TERM II', color: '#e14b2a' },
-        { name: 'OVER ALL', color: '#7d3db5' }
+        { name: 'PT II', color: '#2f9e44' },
+        { name: 'TERM II', color: '#db4b2a' },
+        { name: 'OVER ALL', color: '#7f3fbf' }
     ];
 
     const validSubjects = (subjects || [])
@@ -379,17 +379,14 @@ function buildStudentBarChartSvg(subjects = []) {
         .map(item => {
             const subjectName = String(item.name).trim() || 'Subject';
             const values = series.map(seriesItem => extractGroupedChartValues(item)[seriesItem.name] || 0);
-            return {
-                name: subjectName,
-                values
-            };
+            return { name: subjectName, values };
         })
-        .filter(subject => subject.values.some(value => value > 0))
-        .slice(0, 8);
+        .filter(subject => subject.values.some(value => Number(value) > 0))
+        .slice(0, 5);
 
     const width = 920;
     const height = 420;
-    const margin = { top: 25, right: 170, bottom: 70, left: 60 };
+    const margin = { top: 20, right: 180, bottom: 60, left: 60 };
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
 
@@ -403,26 +400,27 @@ function buildStudentBarChartSvg(subjects = []) {
     }
 
     const groupWidth = chartWidth / validSubjects.length;
-    const barWidth = (groupWidth * 0.72) / series.length;
+    const intraGroupPadding = 12;
+    const barWidth = (groupWidth - intraGroupPadding) / series.length;
 
     const gridLines = Array.from({ length: 11 }, (_, index) => {
         const y = margin.top + (chartHeight / 10) * index;
         const labelValue = 100 - (index * 10);
         return `
-            <line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="#111" stroke-width="1" />
-            <text x="${margin.left - 10}" y="${y + 4}" font-size="14" text-anchor="end" fill="#111">${labelValue}</text>
+            <line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="#b7b7b7" stroke-width="1" />
+            <text x="${margin.left - 10}" y="${y + 4}" font-size="12" text-anchor="end" fill="#111">${labelValue}</text>
         `;
     }).join('');
 
     const subjectBars = validSubjects.map((subject, subjectIndex) => {
-        const groupX = margin.left + subjectIndex * groupWidth + (groupWidth * 0.12);
+        const groupX = margin.left + subjectIndex * groupWidth + 10;
 
         const bars = subject.values.map((value, seriesIndex) => {
-            const x = groupX + seriesIndex * barWidth;
-            const barHeight = (value / 100) * chartHeight;
+            const x = groupX + seriesIndex * barWidth + 2;
+            const barHeight = (Number(value) / 100) * chartHeight;
             const y = margin.top + chartHeight - barHeight;
             return `
-                <rect x="${x}" y="${y}" width="${barWidth * 0.8}" height="${barHeight}" fill="${series[seriesIndex].color}" stroke="#000" stroke-width="0.8" />
+                <rect x="${x}" y="${y}" width="${barWidth - 4}" height="${barHeight}" fill="${series[seriesIndex].color}" stroke="#000" stroke-width="0.6" />
             `;
         }).join('');
 
@@ -430,24 +428,24 @@ function buildStudentBarChartSvg(subjects = []) {
         return `
             <g>
                 ${bars}
-                <text x="${groupX + (groupWidth * 0.5)}" y="${height - 20}" font-size="15" text-anchor="middle" font-weight="700" fill="#111">${labelText}</text>
+                <text x="${groupX + (groupWidth / 2) - 10}" y="${height - 22}" font-size="14" text-anchor="middle" font-weight="700" fill="#111">${labelText}</text>
             </g>
         `;
     }).join('');
 
     const legend = series.map((item, index) => `
-        <g transform="translate(${width - 140}, ${margin.top + index * 30})">
-            <rect x="0" y="0" width="22" height="22" fill="${item.color}" stroke="#000" stroke-width="1" />
-            <text x="30" y="16" font-size="18" font-weight="700" fill="#111">${item.name}</text>
+        <g transform="translate(${width - 130}, ${margin.top + index * 26})">
+            <rect x="0" y="0" width="14" height="14" fill="${item.color}" stroke="#000" stroke-width="0.8" />
+            <text x="22" y="12" font-size="13" font-weight="700" fill="#111">${item.name}</text>
         </g>
     `).join('');
 
     return `
         <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
             <rect width="100%" height="100%" fill="#ffffff" />
+            <line x1="${margin.left}" y1="${margin.top + chartHeight}" x2="${width - margin.right}" y2="${margin.top + chartHeight}" stroke="#111" stroke-width="1.2" />
+            <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + chartHeight}" stroke="#111" stroke-width="1.2" />
             ${gridLines}
-            <line x1="${margin.left}" y1="${margin.top + chartHeight}" x2="${width - margin.right}" y2="${margin.top + chartHeight}" stroke="#111" stroke-width="2" />
-            <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + chartHeight}" stroke="#111" stroke-width="2" />
             ${subjectBars}
             ${legend}
         </svg>
