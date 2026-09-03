@@ -292,81 +292,174 @@ async function readImageBufferFromSource(url) {
     return fetchImage(url);
 }
 
+function normalizeChartKey(value = '') {
+    return String(value)
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
+}
+
+function readNumericValue(rawValue) {
+    if (rawValue === null || rawValue === undefined || rawValue === '') return null;
+    if (typeof rawValue === 'number') return Number.isFinite(rawValue) ? rawValue : null;
+    const cleaned = String(rawValue).trim().replace(/%/g, '').replace(/,/g, '');
+    if (!cleaned || cleaned === '-' || cleaned === 'ABS' || cleaned.toLowerCase() === 'na') return null;
+    const num = Number(cleaned);
+    return Number.isFinite(num) ? num : null;
+}
+
+function classifyTableGroupKey(groupKey = '') {
+    const key = normalizeChartKey(groupKey);
+    const rules = [
+        { label: 'PT I', aliases: ['pti', 'pt1', 'p1', 'periodic1', 'firstperiodictest', 'pti1', 'periodicone', 'p1_'] },
+        { label: 'TERM I', aliases: ['termi', 'term1', 't1', 'firstterm', 'termone', 'termi1', 'term_i', 't1_'] },
+        { label: 'PT II', aliases: ['ptii', 'pt2', 'p2', 'periodic2', 'secondperiodictest', 'ptii2', 'periodictwo', 'p2_'] },
+        { label: 'TERM II', aliases: ['termii', 'term2', 't2', 'secondterm', 'termtwo', 'termii2', 'term_ii', 't2_'] },
+        { label: 'OVER ALL', aliases: ['overall', 'grandpercentage', 'overallpercentage', 'totalpercentage', 'weightedgrandpercentage', 'weightedpercentage', 'final', 'finalpercentage'] }
+    ];
+
+    for (const rule of rules) {
+        if (rule.aliases.some(alias => key === alias || key.includes(alias))) {
+            return rule.label;
+        }
+    }
+
+    if (key.includes('pt') && key.includes('1') && !key.includes('term')) return 'PT I';
+    if (key.includes('term') && key.includes('1')) return 'TERM I';
+    if (key.includes('pt') && key.includes('2') && !key.includes('term')) return 'PT II';
+    if (key.includes('term') && key.includes('2')) return 'TERM II';
+    if (key.includes('overall') || key.includes('grand') || key.includes('final')) return 'OVER ALL';
+
+    return null;
+}
+
+function extractGroupedChartValues(subject = {}) {
+    const result = {
+        'PT I': 0,
+        'TERM I': 0,
+        'PT II': 0,
+        'TERM II': 0,
+        'OVER ALL': 0
+    };
+
+    if (!subject || typeof subject !== 'object') return result;
+
+    const groupTable = subject.groups || {};
+    const aeGroup = groupTable.ae || {};
+    const ptGroup = groupTable.pt || {};
+
+    const pt1 = readNumericValue(ptGroup.pt1) ?? readNumericValue(ptGroup.pt_1) ?? readNumericValue(ptGroup.p1);
+    const pt2 = readNumericValue(ptGroup.pt2) ?? readNumericValue(ptGroup.pt_2) ?? readNumericValue(ptGroup.p2);
+    const t1 = readNumericValue(aeGroup.t1) ?? readNumericValue(aeGroup.term1) ?? readNumericValue(aeGroup.term_1);
+    const t2 = readNumericValue(aeGroup.t2) ?? readNumericValue(aeGroup.term2) ?? readNumericValue(aeGroup.term_2);
+    const overall = readNumericValue(subject.grandPercentage) ?? readNumericValue(subject.weightedGrandPercentage) ?? readNumericValue(subject.weightedPercentage);
+
+    if (pt1 !== null) result['PT I'] = pt1;
+    if (t1 !== null) result['TERM I'] = t1;
+    if (pt2 !== null) result['PT II'] = pt2;
+    if (t2 !== null) result['TERM II'] = t2;
+    if (overall !== null) result['OVER ALL'] = overall;
+
+    return result;
+}
+
 function buildStudentBarChartSvg(subjects = []) {
+    const series = [
+        { name: 'PT I', color: '#2d6bba' },
+        { name: 'TERM I', color: '#f28c28' },
+        { name: 'PT II', color: '#1ea76a' },
+        { name: 'TERM II', color: '#e14b2a' },
+        { name: 'OVER ALL', color: '#7d3db5' }
+    ];
+
     const validSubjects = (subjects || [])
         .filter(item => item && item.name)
         .map(item => {
-            const value = Number(item.grandPercentage);
-            const safeValue = Number.isFinite(value) ? value : 0;
+            const subjectName = String(item.name).trim() || 'Subject';
+            const values = series.map(seriesItem => extractGroupedChartValues(item)[seriesItem.name] || 0);
             return {
-                name: String(item.name).trim() || 'Subject',
-                value: safeValue
+                name: subjectName,
+                values
             };
         })
+        .filter(subject => subject.values.some(value => value > 0))
         .slice(0, 8);
 
-    const width = 760;
-    const height = 340;
-    const margin = { top: 20, right: 15, bottom: 90, left: 50 };
-
+    const width = 920;
+    const height = 420;
+    const margin = { top: 25, right: 170, bottom: 70, left: 60 };
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
-    const maxValue = Math.max(100, ...validSubjects.map(item => item.value), 0);
-    const barWidth = chartWidth / Math.max(validSubjects.length || 1, 1) * 0.62;
-
-    const gridLines = Array.from({ length: 6 }, (_, index) => {
-        const y = margin.top + (chartHeight / 5) * index;
-        const value = 100 - ((100 / 5) * index);
-        return `
-            <line x1="${margin.left}" y1="${y}" x2="${margin.left + chartWidth}" y2="${y}" stroke="#d9d9d9" stroke-width="1" />
-            <text x="${margin.left - 8}" y="${y + 4}" font-size="10" text-anchor="end" fill="#666">${Math.round(value)}%</text>
-        `;
-    }).join('');
-
-    const bars = validSubjects.map((subject, index) => {
-        const x = margin.left + (chartWidth / Math.max(validSubjects.length || 1, 1)) * index + 10;
-        const barHeight = (subject.value / maxValue) * chartHeight;
-        const y = margin.top + chartHeight - barHeight;
-        const label = subject.name.length > 10 ? `${subject.name.substring(0, 10)}...` : subject.name;
-
-        return `
-            <g>
-                <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" fill="#3b82f6" opacity="0.9" />
-                <text x="${x + barWidth / 2}" y="${margin.top + chartHeight + 18}" font-size="10" text-anchor="middle" transform="rotate(-30 ${x + barWidth / 2} ${margin.top + chartHeight + 18})" fill="#333">${label}</text>
-                <text x="${x + barWidth / 2}" y="${y - 8}" font-size="10" text-anchor="middle" fill="#1f2937">${subject.value.toFixed(0)}%</text>
-            </g>
-        `;
-    }).join('');
 
     if (validSubjects.length === 0) {
         return `
             <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
                 <rect width="100%" height="100%" fill="#ffffff"/>
-                <text x="50%" y="50%" font-size="18" text-anchor="middle" fill="#666">No subject data available</text>
+                <text x="50%" y="50%" font-size="20" text-anchor="middle" fill="#111">No chart data available</text>
             </svg>
         `;
     }
 
+    const groupWidth = chartWidth / validSubjects.length;
+    const barWidth = (groupWidth * 0.72) / series.length;
+
+    const gridLines = Array.from({ length: 11 }, (_, index) => {
+        const y = margin.top + (chartHeight / 10) * index;
+        const labelValue = 100 - (index * 10);
+        return `
+            <line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="#111" stroke-width="1" />
+            <text x="${margin.left - 10}" y="${y + 4}" font-size="14" text-anchor="end" fill="#111">${labelValue}</text>
+        `;
+    }).join('');
+
+    const subjectBars = validSubjects.map((subject, subjectIndex) => {
+        const groupX = margin.left + subjectIndex * groupWidth + (groupWidth * 0.12);
+
+        const bars = subject.values.map((value, seriesIndex) => {
+            const x = groupX + seriesIndex * barWidth;
+            const barHeight = (value / 100) * chartHeight;
+            const y = margin.top + chartHeight - barHeight;
+            return `
+                <rect x="${x}" y="${y}" width="${barWidth * 0.8}" height="${barHeight}" fill="${series[seriesIndex].color}" stroke="#000" stroke-width="0.8" />
+            `;
+        }).join('');
+
+        const labelText = subject.name.length > 12 ? subject.name.substring(0, 12) : subject.name;
+        return `
+            <g>
+                ${bars}
+                <text x="${groupX + (groupWidth * 0.5)}" y="${height - 20}" font-size="15" text-anchor="middle" font-weight="700" fill="#111">${labelText}</text>
+            </g>
+        `;
+    }).join('');
+
+    const legend = series.map((item, index) => `
+        <g transform="translate(${width - 140}, ${margin.top + index * 30})">
+            <rect x="0" y="0" width="22" height="22" fill="${item.color}" stroke="#000" stroke-width="1" />
+            <text x="30" y="16" font-size="18" font-weight="700" fill="#111">${item.name}</text>
+        </g>
+    `).join('');
+
     return `
         <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
             <rect width="100%" height="100%" fill="#ffffff" />
-            <text x="${margin.left}" y="18" font-size="16" font-weight="600" fill="#111827">Performance Overview</text>
             ${gridLines}
-            <line x1="${margin.left}" y1="${margin.top + chartHeight}" x2="${margin.left + chartWidth}" y2="${margin.top + chartHeight}" stroke="#666" stroke-width="1.2" />
-            <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + chartHeight}" stroke="#666" stroke-width="1.2" />
-            ${bars}
+            <line x1="${margin.left}" y1="${margin.top + chartHeight}" x2="${width - margin.right}" y2="${margin.top + chartHeight}" stroke="#111" stroke-width="2" />
+            <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + chartHeight}" stroke="#111" stroke-width="2" />
+            ${subjectBars}
+            ${legend}
         </svg>
     `;
 }
 
 async function generateStudentBarChartImage(student, transformedData, tempDir) {
-    const subjects = Array.isArray(transformedData?.subjects) ? transformedData.subjects : [];
-    const chartSvg = buildStudentBarChartSvg(subjects);
+    const subjectRows = Array.isArray(transformedData?.subjects) ? transformedData.subjects : [];
+    const chartSvg = buildStudentBarChartSvg(subjectRows);
     const safeName = `${student.full_name?.replace(/\s+/g, '_') || 'student'}_${student.student_id || 'chart'}`;
     const chartPath = path.join(tempDir, `${safeName}_chart.png`);
 
     try {
-        const pngBuffer = await sharp(Buffer.from(chartSvg)).resize({ width: 760, height: 340, fit: 'contain' }).png().toBuffer();
+        const pngBuffer = await sharp(Buffer.from(chartSvg)).png().toBuffer();
         await fs.writeFile(chartPath, pngBuffer);
         return chartPath;
     } catch (error) {
@@ -438,63 +531,36 @@ async function findImageFilename(contentXmlPath, picturesDir, frameName) {
 
         for (const frame of drawFrames) {
             const frameNameValue = frame['draw:name'];
+            if (frameNameValue !== frameName) continue;
+
             const image = frame['draw:image'];
-            if (frameNameValue === frameName && image) {
-                const href = image['xlink:href'];
-                if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
-                    const filename = href.replace('Pictures/', '');
-                    const filePath = path.join(picturesDir, filename);
-                    try {
-                        await fs.access(filePath);
-                        return filename;
-                    } catch (err) {
-                        console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory:`, err.message);
-                    }
+            if (!image) {
+                console.warn(`⚠️ Frame "${frameName}" exists but contains no draw:image. Skipping replacement.`);
+                return null;
+            }
+
+            const href = image['xlink:href'];
+            if (href && href.startsWith('Pictures/') && /\.(png|jpg|jpeg)$/i.test(href)) {
+                const filename = href.replace('Pictures/', '');
+                const filePath = path.join(picturesDir, filename);
+                try {
+                    await fs.access(filePath);
+                    return filename;
+                } catch (err) {
+                    console.warn(`⚠️ Image ${filename} referenced in content.xml but not found in Pictures directory:`, err.message);
+                    return null;
                 }
             }
-            if (frameNameValue === frameName) {
-                return `${frameName}.png`;
-            }
+
+            console.warn(`⚠️ Frame "${frameName}" exists but the image reference is not a valid Pictures file. Skipping replacement.`);
+            return null;
         }
 
+        console.warn(`⚠️ No valid image frame named "${frameName}" found in the template. Skipping replacement.`);
         return null;
     } catch (err) {
         console.error(`❌ Failed to parse content.xml or read Pictures directory for ${frameName}:`, err);
         return null;
-    }
-}
-
-async function ensureFrameImageExists(contentXmlPath, frameName, targetFilename) {
-    try {
-        let contentXml = await fs.readFile(contentXmlPath, 'utf-8');
-        const escapedFrameName = frameName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const frameRegex = new RegExp(`<draw:frame\\b(?=[^>]*\\b(?:draw:name|name)=["']?${escapedFrameName}["']?)[^>]*>([\\s\\S]*?)<\\/draw:frame>`, 'i');
-        const frameMatch = contentXml.match(frameRegex);
-
-        if (!frameMatch) {
-            console.warn(`⚠️ No frame named "${frameName}" found in content.xml. Chart injection skipped.`);
-            return false;
-        }
-
-        const innerXml = frameMatch[1];
-        const imageTagPattern = /<draw:image\b[^>]*xlink:href=["'][^"']+["'][^>]*\s*\/>/i;
-
-        if (imageTagPattern.test(innerXml)) {
-            const newImageHref = `Pictures/${targetFilename}`;
-            const updatedInnerXml = innerXml.replace(/xlink:href=["'][^"']+["']/i, `xlink:href="${newImageHref}"`);
-            contentXml = contentXml.replace(frameMatch[1], updatedInnerXml);
-            await fs.writeFile(contentXmlPath, contentXml);
-            return true;
-        }
-
-        const imageInsert = `\n            <draw:image xlink:href="Pictures/${targetFilename}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/>\n        `;
-        const updatedFrame = frameMatch[0].replace(/<\/draw:frame>\s*$/i, `${imageInsert}</draw:frame>`);
-        contentXml = contentXml.replace(frameMatch[0], updatedFrame);
-        await fs.writeFile(contentXmlPath, contentXml);
-        return true;
-    } catch (err) {
-        console.warn(`⚠️ Failed to ensure image is injected into frame "${frameName}":`, err.message);
-        return false;
     }
 }
 
@@ -604,8 +670,9 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir, 
             continue;
         }
 
-        const targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName) || `${frameName}.png`;
+        const targetFilename = await findImageFilename(contentXmlPath, picturesDir, frameName);
         if (!targetFilename) {
+            console.warn(`⚠️ Skipping ${description} (${frameName}): no valid image frame was found in the template.`);
             continue;
         }
 
@@ -620,7 +687,6 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir, 
         try {
             const imagePath = path.join(picturesDir, targetFilename);
             await fs.writeFile(imagePath, imageBuffer);
-            await ensureFrameImageExists(contentXmlPath, frameName, targetFilename);
             console.log(`✅ Replaced ${description} (${frameName})`);
             anyImageReplaced = true;
         } catch (writeError) {
