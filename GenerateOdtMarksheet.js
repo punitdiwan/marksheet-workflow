@@ -264,6 +264,117 @@ async function fetchImage(url) {
     }
 }
 
+async function readImageBufferFromSource(url) {
+    if (!url) return null;
+
+    if (typeof url === 'string' && url.startsWith('file://')) {
+        const actualPath = url.replace(/^file:\/\//, '');
+        try {
+            const fileBuffer = await fs.readFile(actualPath);
+            return await sharp(fileBuffer).toFormat('png').toBuffer();
+        } catch (err) {
+            console.warn(`⚠️ Could not read local image: ${actualPath}`, err.message);
+            return null;
+        }
+    }
+
+    if (typeof url === 'string' && url.startsWith('data:')) {
+        try {
+            const base64 = url.split(',')[1];
+            const buffer = Buffer.from(base64, 'base64');
+            return await sharp(buffer).toFormat('png').toBuffer();
+        } catch (err) {
+            console.warn(`⚠️ Could not convert data URL image:`, err.message);
+            return null;
+        }
+    }
+
+    return fetchImage(url);
+}
+
+function buildStudentBarChartSvg(subjects = []) {
+    const validSubjects = (subjects || [])
+        .filter(item => item && item.name)
+        .map(item => {
+            const value = Number(item.grandPercentage);
+            const safeValue = Number.isFinite(value) ? value : 0;
+            return {
+                name: String(item.name).trim() || 'Subject',
+                value: safeValue
+            };
+        })
+        .slice(0, 8);
+
+    const width = 760;
+    const height = 340;
+    const margin = { top: 20, right: 15, bottom: 90, left: 50 };
+
+    const chartWidth = width - margin.left - margin.right;
+    const chartHeight = height - margin.top - margin.bottom;
+    const maxValue = Math.max(100, ...validSubjects.map(item => item.value), 0);
+    const barWidth = chartWidth / Math.max(validSubjects.length || 1, 1) * 0.62;
+
+    const gridLines = Array.from({ length: 6 }, (_, index) => {
+        const y = margin.top + (chartHeight / 5) * index;
+        const value = 100 - ((100 / 5) * index);
+        return `
+            <line x1="${margin.left}" y1="${y}" x2="${margin.left + chartWidth}" y2="${y}" stroke="#d9d9d9" stroke-width="1" />
+            <text x="${margin.left - 8}" y="${y + 4}" font-size="10" text-anchor="end" fill="#666">${Math.round(value)}%</text>
+        `;
+    }).join('');
+
+    const bars = validSubjects.map((subject, index) => {
+        const x = margin.left + (chartWidth / Math.max(validSubjects.length || 1, 1)) * index + 10;
+        const barHeight = (subject.value / maxValue) * chartHeight;
+        const y = margin.top + chartHeight - barHeight;
+        const label = subject.name.length > 10 ? `${subject.name.substring(0, 10)}...` : subject.name;
+
+        return `
+            <g>
+                <rect x="${x}" y="${y}" width="${barWidth}" height="${barHeight}" rx="4" fill="#3b82f6" opacity="0.9" />
+                <text x="${x + barWidth / 2}" y="${margin.top + chartHeight + 18}" font-size="10" text-anchor="middle" transform="rotate(-30 ${x + barWidth / 2} ${margin.top + chartHeight + 18})" fill="#333">${label}</text>
+                <text x="${x + barWidth / 2}" y="${y - 8}" font-size="10" text-anchor="middle" fill="#1f2937">${subject.value.toFixed(0)}%</text>
+            </g>
+        `;
+    }).join('');
+
+    if (validSubjects.length === 0) {
+        return `
+            <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+                <rect width="100%" height="100%" fill="#ffffff"/>
+                <text x="50%" y="50%" font-size="18" text-anchor="middle" fill="#666">No subject data available</text>
+            </svg>
+        `;
+    }
+
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+            <rect width="100%" height="100%" fill="#ffffff" />
+            <text x="${margin.left}" y="18" font-size="16" font-weight="600" fill="#111827">Performance Overview</text>
+            ${gridLines}
+            <line x1="${margin.left}" y1="${margin.top + chartHeight}" x2="${margin.left + chartWidth}" y2="${margin.top + chartHeight}" stroke="#666" stroke-width="1.2" />
+            <line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + chartHeight}" stroke="#666" stroke-width="1.2" />
+            ${bars}
+        </svg>
+    `;
+}
+
+async function generateStudentBarChartImage(student, transformedData, tempDir) {
+    const subjects = Array.isArray(transformedData?.subjects) ? transformedData.subjects : [];
+    const chartSvg = buildStudentBarChartSvg(subjects);
+    const safeName = `${student.full_name?.replace(/\s+/g, '_') || 'student'}_${student.student_id || 'chart'}`;
+    const chartPath = path.join(tempDir, `${safeName}_chart.png`);
+
+    try {
+        const pngBuffer = await sharp(Buffer.from(chartSvg)).resize({ width: 760, height: 340, fit: 'contain' }).png().toBuffer();
+        await fs.writeFile(chartPath, pngBuffer);
+        return chartPath;
+    } catch (error) {
+        console.warn(`⚠️ Failed to create chart for ${student.full_name}:`, error.message);
+        return null;
+    }
+}
+
 async function waitForFile(filePath, retries = 5, delay = 100) {
     for (let i = 0; i < retries; i++) {
         try {
@@ -353,7 +464,7 @@ async function findImageFilename(contentXmlPath, picturesDir, frameName) {
     }
 }
 
-async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) {
+async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir, transformedData = {}) {
     const studentDir = path.join(tempDir, `student_${student.student_id}`);
     await fs.mkdir(studentDir, { recursive: true });
 
@@ -397,6 +508,8 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
     // --- NEW: UNIFIED AND NAME-BASED IMAGE REPLACEMENT LOGIC ---
 
+    const chartImagePath = await generateStudentBarChartImage(student, transformedData, tempDir);
+
     // Define the images we want to replace by their frame name in the ODT
     // and where to find their new URL in our data.
     const imageReplacements = [
@@ -409,6 +522,26 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
             frameName: 'studentImage',
             url: student.photo,
             description: 'Student Photo'
+        },
+        {
+            frameName: 'studentBarChart',
+            url: chartImagePath ? `file://${chartImagePath}` : null,
+            description: 'Student Performance Bar Chart'
+        },
+        {
+            frameName: 'BarChart',
+            url: chartImagePath ? `file://${chartImagePath}` : null,
+            description: 'Bar Chart'
+        },
+        {
+            frameName: 'marksChart',
+            url: chartImagePath ? `file://${chartImagePath}` : null,
+            description: 'Marks Chart'
+        },
+        {
+            frameName: 'studentChart',
+            url: chartImagePath ? `file://${chartImagePath}` : null,
+            description: 'Student Chart'
         }
     ];
 
@@ -446,9 +579,9 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir) 
 
         console.log(`➡️  Mapping frame "${frameName}" to file "${targetFilename}" for replacement.`);
 
-        const imageBuffer = await fetchImage(url);
+        const imageBuffer = await readImageBufferFromSource(url);
         if (!imageBuffer) {
-            console.warn(`⚠️ Failed to fetch image for ${description} from ${url}. Skipping replacement.`);
+            console.warn(`⚠️ Failed to read image for ${description} from ${url}. Skipping replacement.`);
             continue;
         }
 
@@ -849,7 +982,7 @@ async function GenerateOdtFile() {
 
             console.log(`\n--- 📝 Processing student: ${student.full_name} (${i + 1}/${students.length}) ---`);
 
-            const modifiedOdtPath = await replaceImageInOdt(templatePath, student, schoolDetails, tempDir);
+            const modifiedOdtPath = await replaceImageInOdt(templatePath, student, schoolDetails, tempDir, transformedData);
 
             const dynamicDetailsConfig = studentDetailsConfigFromApi;
             let details = {};
