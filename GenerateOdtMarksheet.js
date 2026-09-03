@@ -344,21 +344,23 @@ function extractGroupedChartValues(subject = {}) {
 
     if (!subject || typeof subject !== 'object') return result;
 
-    const groupTable = subject.groups || {};
-    const aeGroup = groupTable.ae || {};
-    const ptGroup = groupTable.pt || {};
+    const aeGroup = subject.groups?.ae || {};
+    const ptGroup = subject.groups?.pt || {};
 
-    const pt1 = readNumericValue(ptGroup.pt1) ?? readNumericValue(ptGroup.pt_1) ?? readNumericValue(ptGroup.p1);
-    const pt2 = readNumericValue(ptGroup.pt2) ?? readNumericValue(ptGroup.pt_2) ?? readNumericValue(ptGroup.p2);
+    const pt1 = readNumericValue(ptGroup.pt1) ?? readNumericValue(ptGroup.p1) ?? readNumericValue(ptGroup.pt_1);
+    const pt2 = readNumericValue(ptGroup.pt2) ?? readNumericValue(ptGroup.p2) ?? readNumericValue(ptGroup.pt_2);
     const t1 = readNumericValue(aeGroup.t1) ?? readNumericValue(aeGroup.term1) ?? readNumericValue(aeGroup.term_1);
     const t2 = readNumericValue(aeGroup.t2) ?? readNumericValue(aeGroup.term2) ?? readNumericValue(aeGroup.term_2);
-    const overall = readNumericValue(subject.grandPercentage) ?? readNumericValue(subject.weightedGrandPercentage) ?? readNumericValue(subject.weightedPercentage);
+
+    const overallFromPercentage = readNumericValue(subject.grandPercentage) ?? readNumericValue(subject.weightedGrandPercentage) ?? readNumericValue(subject.weightedPercentage);
+    const overallFromTotal = readNumericValue(subject.grandTotal) ?? readNumericValue(subject.grandTotal_raw);
+    const overall = overallFromPercentage !== null ? overallFromPercentage : (overallFromTotal !== null ? overallFromTotal : 0);
 
     if (pt1 !== null) result['PT I'] = pt1;
     if (t1 !== null) result['TERM I'] = t1;
     if (pt2 !== null) result['PT II'] = pt2;
     if (t2 !== null) result['TERM II'] = t2;
-    if (overall !== null) result['OVER ALL'] = overall;
+    result['OVER ALL'] = overall;
 
     return result;
 }
