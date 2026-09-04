@@ -659,9 +659,12 @@ function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
         `;
     }
 
-    const groupWidth = chartWidth / validSubjects.length;
-    const intraGroupPadding = 12;
+    // Add horizontal gap between subject groups so they're visually separated
+    const groupGap = 20; // px gap between groups
+    const groupWidth = validSubjects.length > 0 ? (chartWidth - (groupGap * Math.max(0, validSubjects.length - 1))) / validSubjects.length : 0;
+    const intraGroupPadding = 16; // internal padding within a group
     const barWidth = series.length > 0 ? (groupWidth - intraGroupPadding) / series.length : 0;
+    const barInnerReduction = 6; // reduce each bar's width to make bars slimmer
 
     const gridLines = Array.from({ length: 11 }, (_, index) => {
         const y = margin.top + (chartHeight / 10) * index;
@@ -673,22 +676,26 @@ function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
     }).join('');
 
     const subjectBars = validSubjects.map((subject, subjectIndex) => {
-        const groupX = margin.left + subjectIndex * groupWidth + 10;
+        const groupX = margin.left + subjectIndex * (groupWidth + groupGap) + 10;
 
-            const bars = subject.values.map((value, seriesIndex) => {
-            const x = groupX + seriesIndex * barWidth + 2;
+        const bars = subject.values.map((value, seriesIndex) => {
+            // center a slimmer bar inside its allocated slot
+            const slotX = groupX + seriesIndex * barWidth;
+            const innerBarW = Math.max(6, barWidth - barInnerReduction);
+            const x = slotX + (barWidth - innerBarW) / 2;
             const barHeight = (Number(value) / 100) * chartHeight;
             const y = margin.top + chartHeight - barHeight;
+            const color = (series[seriesIndex] && series[seriesIndex].color) || '#444';
             return `
-                <rect x="${x}" y="${y}" width="${barWidth - 4}" height="${barHeight}" fill="${series[seriesIndex].color}" stroke="#000" stroke-width="0.6" />
+                <rect x="${x}" y="${y}" width="${innerBarW}" height="${barHeight}" fill="${color}" stroke="#000" stroke-width="0.6" rx="2" />
             `;
         }).join('');
 
-        const labelText = subject.name.length > 12 ? subject.name.substring(0, 12) : subject.name;
+        const labelText = subject.name.length > 14 ? subject.name.substring(0, 14) + '…' : subject.name;
         return `
             <g>
                 ${bars}
-                <text x="${groupX + (groupWidth / 2) - 10}" y="${height - 22}" font-size="14" text-anchor="middle" font-weight="700" fill="#111">${labelText}</text>
+                <text x="${groupX + (groupWidth / 2)}" y="${height - 22}" font-size="13" text-anchor="middle" font-weight="700" fill="#111">${labelText}</text>
             </g>
         `;
     }).join('');
