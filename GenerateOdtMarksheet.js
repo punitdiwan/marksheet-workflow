@@ -671,7 +671,7 @@ function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
         const labelValue = 100 - (index * 10);
         return `
             <line x1="${margin.left}" y1="${y}" x2="${width - margin.right}" y2="${y}" stroke="#b7b7b7" stroke-width="1" />
-            <text x="${margin.left - 10}" y="${y + 4}" font-size="12" text-anchor="end" fill="#111">${labelValue}</text>
+            <text x="${margin.left - 10}" y="${y + 6}" font-size="13" text-anchor="end" fill="#000">${labelValue}</text>
         `;
     }).join('');
 
@@ -695,7 +695,7 @@ function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
         return `
             <g>
                 ${bars}
-                <text x="${groupX + (groupWidth / 2)}" y="${height - 22}" font-size="13" text-anchor="middle" font-weight="700" fill="#111">${labelText}</text>
+                <text x="${groupX + (groupWidth / 2)}" y="${height - 22}" font-size="15" text-anchor="middle" font-weight="800" fill="#000">${labelText}</text>
             </g>
         `;
     }).join('');
