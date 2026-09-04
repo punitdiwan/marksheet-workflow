@@ -600,7 +600,37 @@ function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
     const seriesKeys = Array.isArray(detectedSeries) && detectedSeries.length > 0 ? detectedSeries : defaultSeriesKeys;
     const palette = ['#3f6fb5', '#f28c28', '#2f9e44', '#db4b2a', '#7f3fbf', '#4a90e2', '#f2b233', '#9b59b6'];
 
-    const series = seriesKeys.map((k, i) => ({ key: k, name: (k === 'overall' ? 'OVER ALL' : humanizeSeriesKey(k)), color: palette[i % palette.length] }));
+    // Filter series to only those present in the subjects data (at least one numeric value)
+    function hasNumericForSeries(subject, key) {
+        if (!subject || typeof subject !== 'object') return false;
+        // Check groups for numeric values
+        const groups = subject.groups || {};
+        for (const groupData of Object.values(groups)) {
+            if (!groupData || typeof groupData !== 'object') continue;
+            // direct key
+            if (groupData.hasOwnProperty(key) && readNumericValue(groupData[key]) !== null) return true;
+            // variations
+            const compact = key.replace(/_/g, '');
+            if (groupData.hasOwnProperty(compact) && readNumericValue(groupData[compact]) !== null) return true;
+            // percentage
+            if (groupData.hasOwnProperty('percentage') && readNumericValue(groupData.percentage) !== null) return true;
+        }
+        // Check top-level subject keys
+        if (subject.hasOwnProperty(key) && readNumericValue(subject[key]) !== null) return true;
+        // variations
+        const variations = [key, key.replace(/_/g, ''), key + '_total', key + 'total'];
+        for (const v of variations) {
+            for (const k of Object.keys(subject)) {
+                if (k.toLowerCase() === String(v).toLowerCase() && readNumericValue(subject[k]) !== null) return true;
+            }
+        }
+        // overall checks
+        if (String(key).toLowerCase().includes('overall') && (readNumericValue(subject.grandPercentage) !== null || readNumericValue(subject.weightedGrandPercentage) !== null || readNumericValue(subject.percentage) !== null)) return true;
+        return false;
+    }
+
+    const availableSeriesKeys = seriesKeys.filter(k => (subjects || []).some(sub => hasNumericForSeries(sub, k)));
+    const series = availableSeriesKeys.map((k, i) => ({ key: k, name: (k === 'overall' ? 'OVER ALL' : humanizeSeriesKey(k)), color: palette[i % palette.length] }));
     console.log(`ℹ️ buildStudentBarChartSvg: using series: ${JSON.stringify(series.map(s => ({ key: s.key, name: s.name })))}`);
 
     const validSubjects = (subjects || [])
@@ -631,7 +661,7 @@ function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
 
     const groupWidth = chartWidth / validSubjects.length;
     const intraGroupPadding = 12;
-    const barWidth = (groupWidth - intraGroupPadding) / series.length;
+    const barWidth = series.length > 0 ? (groupWidth - intraGroupPadding) / series.length : 0;
 
     const gridLines = Array.from({ length: 11 }, (_, index) => {
         const y = margin.top + (chartHeight / 10) * index;
@@ -645,7 +675,7 @@ function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
     const subjectBars = validSubjects.map((subject, subjectIndex) => {
         const groupX = margin.left + subjectIndex * groupWidth + 10;
 
-        const bars = subject.values.map((value, seriesIndex) => {
+            const bars = subject.values.map((value, seriesIndex) => {
             const x = groupX + seriesIndex * barWidth + 2;
             const barHeight = (Number(value) / 100) * chartHeight;
             const y = margin.top + chartHeight - barHeight;
@@ -682,9 +712,9 @@ function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
     `;
 }
 
-async function generateStudentBarChartImage(student, transformedData, tempDir) {
+async function generateStudentBarChartImage(student, transformedData, tempDir, detectedSeries = null) {
     const subjectRows = Array.isArray(transformedData?.subjects) ? transformedData.subjects : [];
-    const chartSvg = buildStudentBarChartSvg(subjectRows);
+    const chartSvg = buildStudentBarChartSvg(subjectRows, detectedSeries);
     const safeName = `${student.full_name?.replace(/\s+/g, '_') || 'student'}_${student.student_id || 'chart'}`;
     const chartPath = path.join(tempDir, `${safeName}_chart.png`);
 
