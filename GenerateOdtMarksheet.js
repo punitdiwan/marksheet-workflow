@@ -59,6 +59,155 @@ const execPromise = util.promisify(exec);
 const carboneRender = util.promisify(carbone.render);
 const parseXml = util.promisify(xml2js.parseString);
 
+// --- NEW: Extract series (exam columns) from template table placed before image frame ---
+async function extractSeriesFromTemplate(contentXmlPath, frameName) {
+    try {
+        const contentXml = await fs.readFile(contentXmlPath, 'utf-8');
+        const parsed = await parseXml(contentXml, {
+            explicitArray: false,
+            ignoreAttrs: false,
+            mergeAttrs: false,
+            explicitChildren: true,
+            preserveChildrenOrder: true
+        });
+
+        const textBody = parsed['office:document-content']?.['office:body']?.['office:text'];
+        if (!textBody) return null;
+
+        // Flatten children preserving order
+        const children = textBody.$$ || [];
+
+        // Find the index of the draw:frame with the given name
+        let frameIndex = -1;
+        for (let i = 0; i < children.length; i++) {
+            const node = children[i];
+            if (!node) continue;
+            if (node['#name'] === 'draw:frame') {
+                const attrs = node.$ || {};
+                if (attrs['draw:name'] === frameName) { frameIndex = i; break; }
+            }
+            // also check nested frames inside paragraphs
+            if (node['#name'] === 'text:p' && node.$$) {
+                for (const child of node.$$) {
+                    if (child['#name'] === 'draw:frame' && (child.$ || {})['draw:name'] === frameName) {
+                        frameIndex = i; break;
+                    }
+                }
+                if (frameIndex !== -1) break;
+            }
+        }
+        // First: try to find a table whose attributes indicate it was named for this frame
+        for (let i = 0; i < children.length; i++) {
+            const node = children[i];
+            if (!node) continue;
+            if (node['#name'] === 'table:table') {
+                const attrs = node.$ || {};
+                // look for any attribute value that equals the frameName (common: table:name)
+                const attrValues = Object.values(attrs).map(v => String(v));
+                if (attrValues.includes(String(frameName))) {
+                    // extract headers from this table
+                    const rows = [];
+                    const tableChildren = node.$$ || [];
+                    for (const tc of tableChildren) {
+                        if (tc['#name'] === 'table:table-row') rows.push(tc);
+                    }
+                    if (rows.length === 0) break;
+                    const headerRow = rows.find(r => (r.$$ || []).some(c => c['#name'] === 'table:table-cell')) || rows[0];
+                    const headers = [];
+                    for (const cell of headerRow.$$ || []) {
+                        if (cell['#name'] !== 'table:table-cell') continue;
+                        let cellText = '';
+                        if (cell.$$) {
+                            for (const cc of cell.$$) {
+                                if (cc['#name'] === 'text:p' && typeof cc._ === 'string') {
+                                    cellText += cc._;
+                                } else if (cc['#name'] === 'text:p' && Array.isArray(cc._)) {
+                                    cellText += cc._.join(' ');
+                                } else if (cc['#name'] === 'text:p' && cc.$$) {
+                                    for (const span of cc.$$) {
+                                        if (typeof span._ === 'string') cellText += span._;
+                                    }
+                                }
+                            }
+                        }
+                        cellText = (cellText || '').trim();
+                        if (cellText) headers.push(cellText);
+                    }
+                    const normalized = headers.map(h => {
+                        const k = String(h).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+                        if (k.includes('pt') && k.includes('1')) return 'pt1';
+                        if (k.includes('pt') && k.includes('2')) return 'pt2';
+                        if (k.includes('term') && k.includes('1')) return 't1';
+                        if (k.includes('term') && k.includes('2')) return 't2';
+                        if (k.includes('over') || k.includes('overall') || k.includes('grand')) return 'overall';
+                        return k;
+                    }).filter(Boolean);
+                    return normalized.length ? normalized : null;
+                }
+            }
+        }
+
+        // Fallback: Search backwards for the nearest table:table node before the frame
+        for (let j = Math.max(0, frameIndex - 1); j >= 0; j--) {
+            const node = children[j];
+            if (!node) continue;
+            if (node['#name'] === 'table:table') {
+                // Extract header row(s)
+                const rows = [];
+                const tableChildren = node.$$ || [];
+                for (const tc of tableChildren) {
+                    if (tc['#name'] === 'table:table-row') rows.push(tc);
+                }
+                if (rows.length === 0) continue;
+
+                // pick first non-empty row as header
+                const headerRow = rows.find(r => (r.$$ || []).some(c => c['#name'] === 'table:table-cell')) || rows[0];
+                const headers = [];
+                for (const cell of headerRow.$$ || []) {
+                    if (cell['#name'] !== 'table:table-cell') continue;
+                    // text may be nested under text:p
+                    let cellText = '';
+                    if (cell.$$) {
+                        for (const cc of cell.$$) {
+                            if (cc['#name'] === 'text:p' && typeof cc._ === 'string') {
+                                cellText += cc._;
+                            } else if (cc['#name'] === 'text:p' && Array.isArray(cc._)) {
+                                cellText += cc._.join(' ');
+                            } else if (cc['#name'] === 'text:p' && cc.$$) {
+                                // flatten text spans
+                                for (const span of cc.$$) {
+                                    if (typeof span._ === 'string') cellText += span._;
+                                }
+                            }
+                        }
+                    }
+                    cellText = (cellText || '').trim();
+                    if (cellText) headers.push(cellText);
+                }
+
+                // Normalize candidate headers to keys (like pt1, t1, overall)
+                const normalized = headers.map(h => {
+                    const k = String(h).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+                    // common replacements
+                    if (k.includes('pt') && k.includes('1')) return 'pt1';
+                    if (k.includes('pt') && k.includes('2')) return 'pt2';
+                    if (k.includes('term') && k.includes('1')) return 't1';
+                    if (k.includes('term') && k.includes('2')) return 't2';
+                    if (k.includes('over') || k.includes('overall') || k.includes('grand')) return 'overall';
+                    return k;
+                }).filter(Boolean);
+
+                return normalized.length ? normalized : null;
+            }
+        }
+    } catch (err) {
+        console.warn('⚠️ extractSeriesFromTemplate failed:', err.message);
+    }
+    return null;
+}
+
+// --- END NEW ---
+
 // --- NEW: NAMING CONVENTION HELPER FUNCTION ---
 /**
  * Applies a naming convention to all string values within a data structure.
@@ -398,24 +547,67 @@ function extractGroupedChartValues(subject = {}) {
     return result;
 }
 
-function buildStudentBarChartSvg(subjects = []) {
-    const series = [
-        { name: 'PT I', color: '#3f6fb5' },
-        { name: 'TERM I', color: '#f28c28' },
-        { name: 'PT II', color: '#2f9e44' },
-        { name: 'TERM II', color: '#db4b2a' },
-        { name: 'OVER ALL', color: '#7f3fbf' }
-    ];
+function getValueForSeriesKey(subject, key) {
+    if (!subject || typeof subject !== 'object') return 0;
+    const lk = String(key || '').toLowerCase();
+    if (lk === 'overall' || lk === 'over_all' || lk === 'overall_percentage') {
+        return readNumericValue(subject.grandPercentage) ?? readNumericValue(subject.weightedGrandPercentage) ?? readNumericValue(subject.weightedPercentage) ?? 0;
+    }
+
+    // 1. search group rows
+    const groups = subject.groups || {};
+    for (const groupData of Object.values(groups)) {
+        if (groupData && typeof groupData === 'object') {
+            if (groupData.hasOwnProperty(key)) {
+                const v = readNumericValue(groupData[key]); if (v !== null) return v;
+            }
+            // try variations
+            const compact = key.replace(/_/g, '');
+            if (groupData.hasOwnProperty(compact)) { const v = readNumericValue(groupData[compact]); if (v !== null) return v; }
+        }
+    }
+
+    // 2. top-level
+    if (subject.hasOwnProperty(key)) { const v = readNumericValue(subject[key]); if (v !== null) return v; }
+
+    // 3. aggregated totals ending with _total
+    for (const k of Object.keys(subject)) {
+        if (k.toLowerCase().endsWith((key + '_total').toLowerCase()) || k.toLowerCase().endsWith((key + 'total').toLowerCase())) {
+            const v = readNumericValue(subject[k]); if (v !== null) return v;
+        }
+    }
+
+    return 0;
+}
+
+function humanizeSeriesKey(k = '') {
+    if (!k) return '';
+    const s = String(k).toLowerCase();
+    if (s === 'pt1') return 'PT I';
+    if (s === 'pt2') return 'PT II';
+    if (s === 't1' || s === 'term1') return 'TERM I';
+    if (s === 't2' || s === 'term2') return 'TERM II';
+    if (s === 'overall' || s === 'over_all') return 'OVER ALL';
+    return String(k).replace(/[_\-]/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+}
+
+function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
+    // detectedSeries: array of keys like ['pt1','t1','pt2','t2','overall']
+    const defaultSeriesKeys = ['pt1','t1','pt2','t2','overall'];
+    const seriesKeys = Array.isArray(detectedSeries) && detectedSeries.length > 0 ? detectedSeries : defaultSeriesKeys;
+    const palette = ['#3f6fb5','#f28c28','#2f9e44','#db4b2a','#7f3fbf','#4a90e2','#f2b233','#9b59b6'];
+
+    const series = seriesKeys.map((k, i) => ({ key: k, name: (k === 'overall' ? 'OVER ALL' : humanizeSeriesKey(k)), color: palette[i % palette.length] }));
 
     const validSubjects = (subjects || [])
         .filter(item => item && item.name)
         .map(item => {
             const subjectName = String(item.name).trim() || 'Subject';
-            const values = series.map(seriesItem => extractGroupedChartValues(item)[seriesItem.name] || 0);
+            const values = series.map(s => getValueForSeriesKey(item, s.key) || 0);
             return { name: subjectName, values };
         })
-        .filter(subject => subject.values.some(value => Number(value) > 0))
-        .slice(0, 5);
+        .filter(subject => subject.values.some(v => Number(v) > 0))
+        .slice(0, 8);
 
     const width = 920;
     const height = 420;
@@ -448,7 +640,7 @@ function buildStudentBarChartSvg(subjects = []) {
     const subjectBars = validSubjects.map((subject, subjectIndex) => {
         const groupX = margin.left + subjectIndex * groupWidth + 10;
 
-        const bars = subject.values.map((value, seriesIndex) => {
+            const bars = subject.values.map((value, seriesIndex) => {
             const x = groupX + seriesIndex * barWidth + 2;
             const barHeight = (Number(value) / 100) * chartHeight;
             const y = margin.top + chartHeight - barHeight;
@@ -641,7 +833,16 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir, 
 
     // --- NEW: UNIFIED AND NAME-BASED IMAGE REPLACEMENT LOGIC ---
 
-    const chartImagePath = await generateStudentBarChartImage(student, transformedData, tempDir);
+    // Attempt to detect series order from template table behind the image frame
+    let detectedSeries = null;
+    try {
+        detectedSeries = await extractSeriesFromTemplate(contentXmlPath, frameName);
+        if (detectedSeries) console.log(`ℹ️ Detected series from template: ${JSON.stringify(detectedSeries)}`);
+    } catch (err) {
+        console.warn('⚠️ Series detection failed:', err.message);
+    }
+
+    const chartImagePath = await generateStudentBarChartImage(student, transformedData, tempDir, detectedSeries);
 
     // Define the images we want to replace by their frame name in the ODT
     // and where to find their new URL in our data.
