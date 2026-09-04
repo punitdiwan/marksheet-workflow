@@ -343,24 +343,57 @@ function extractGroupedChartValues(subject = {}) {
     };
 
     if (!subject || typeof subject !== 'object') return result;
+    // 1) Scan all group rows (ae, pt, etc.) for pt1/pt2/t1/t2 keys. Many templates put PTs inside the 'ae' row.
+    const groups = subject.groups || {};
+    for (const [groupKey, groupData] of Object.entries(groups)) {
+        if (!groupData || typeof groupData !== 'object') continue;
 
-    const aeGroup = subject.groups?.ae || {};
-    const ptGroup = subject.groups?.pt || {};
+        // Prefer explicit keys if present
+        const g_pt1 = readNumericValue(groupData.pt1) ?? readNumericValue(groupData.pt_1) ?? readNumericValue(groupData.p1);
+        const g_pt2 = readNumericValue(groupData.pt2) ?? readNumericValue(groupData.pt_2) ?? readNumericValue(groupData.p2);
+        const g_t1 = readNumericValue(groupData.t1) ?? readNumericValue(groupData.term1) ?? readNumericValue(groupData.term_1) ?? readNumericValue(groupData.t_1);
+        const g_t2 = readNumericValue(groupData.t2) ?? readNumericValue(groupData.term2) ?? readNumericValue(groupData.term_2) ?? readNumericValue(groupData.t_2);
 
-    const pt1 = readNumericValue(ptGroup.pt1) ?? readNumericValue(ptGroup.p1) ?? readNumericValue(ptGroup.pt_1);
-    const pt2 = readNumericValue(ptGroup.pt2) ?? readNumericValue(ptGroup.p2) ?? readNumericValue(ptGroup.pt_2);
-    const t1 = readNumericValue(aeGroup.t1) ?? readNumericValue(aeGroup.term1) ?? readNumericValue(aeGroup.term_1);
-    const t2 = readNumericValue(aeGroup.t2) ?? readNumericValue(aeGroup.term2) ?? readNumericValue(aeGroup.term_2);
+        if ((result['PT I'] === 0 || result['PT I'] === null) && g_pt1 !== null) result['PT I'] = g_pt1;
+        if ((result['PT II'] === 0 || result['PT II'] === null) && g_pt2 !== null) result['PT II'] = g_pt2;
+        if ((result['TERM I'] === 0 || result['TERM I'] === null) && g_t1 !== null) result['TERM I'] = g_t1;
+        if ((result['TERM II'] === 0 || result['TERM II'] === null) && g_t2 !== null) result['TERM II'] = g_t2;
 
-    const overallFromPercentage = readNumericValue(subject.grandPercentage) ?? readNumericValue(subject.weightedGrandPercentage) ?? readNumericValue(subject.weightedPercentage);
-    const overallFromTotal = readNumericValue(subject.grandTotal) ?? readNumericValue(subject.grandTotal_raw);
-    const overall = overallFromPercentage !== null ? overallFromPercentage : (overallFromTotal !== null ? overallFromTotal : 0);
+        // Also accept percentage field from the group as fallback for term/PT
+        if ((result['TERM I'] === 0 || result['TERM I'] === null) && readNumericValue(groupData.percentage) !== null) {
+            // if group key looks like a term, map it
+            const k = normalizeChartKey(groupKey);
+            if (k.includes('t1') || k.includes('term1') || k.includes('term_i') || k.includes('termone')) {
+                result['TERM I'] = readNumericValue(groupData.percentage);
+            }
+        }
+    }
 
-    if (pt1 !== null) result['PT I'] = pt1;
-    if (t1 !== null) result['TERM I'] = t1;
-    if (pt2 !== null) result['PT II'] = pt2;
-    if (t2 !== null) result['TERM II'] = t2;
-    result['OVER ALL'] = overall;
+    // 2) Fallback: scan subject top-level keys for pattern matches (ae_eng_pt1, ae_eng_pt2, etc.)
+    for (const key of Object.keys(subject)) {
+        const lower = String(key).toLowerCase();
+        if (lower.endsWith('pt1') || lower.endsWith('_pt1')) {
+            const val = readNumericValue(subject[key]);
+            if (val !== null && (result['PT I'] === 0 || result['PT I'] === null)) result['PT I'] = val;
+        }
+        if (lower.endsWith('pt2') || lower.endsWith('_pt2')) {
+            const val = readNumericValue(subject[key]);
+            if (val !== null && (result['PT II'] === 0 || result['PT II'] === null)) result['PT II'] = val;
+        }
+        if (lower.endsWith('t1') || lower.endsWith('_t1') || lower.endsWith('term1')) {
+            const val = readNumericValue(subject[key]);
+            if (val !== null && (result['TERM I'] === 0 || result['TERM I'] === null)) result['TERM I'] = val;
+        }
+        if (lower.endsWith('t2') || lower.endsWith('_t2') || lower.endsWith('term2')) {
+            const val = readNumericValue(subject[key]);
+            if (val !== null && (result['TERM II'] === 0 || result['TERM II'] === null)) result['TERM II'] = val;
+        }
+    }
+
+    // 3) OVER ALL: prefer grandPercentage, else grandTotal
+    const overallFromPercentage = readNumericValue(subject.grandPercentage) ?? readNumericValue(subject.weightedGrandPercentage) ?? readNumericValue(subject.weightedPercentage) ?? readNumericValue(subject.percentage);
+    const overallFromTotal = readNumericValue(subject.grandTotal) ?? readNumericValue(subject.grandTotal_raw) ?? readNumericValue(subject.total);
+    result['OVER ALL'] = overallFromPercentage !== null ? overallFromPercentage : (overallFromTotal !== null ? overallFromTotal : 0);
 
     return result;
 }
