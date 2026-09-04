@@ -74,132 +74,131 @@ async function extractSeriesFromTemplate(contentXmlPath, frameName) {
         const textBody = parsed['office:document-content']?.['office:body']?.['office:text'];
         if (!textBody) return null;
 
-        // Flatten children preserving order
-        const children = textBody.$$ || [];
+        // Helper: normalize headers and prefer exam-like keys (pt, term, overall)
+        function normalizeAndFilterHeaders(headers) {
+            const mapped = headers.map(h => {
+                const k = String(h).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+                if (k.includes('pt') && k.includes('1')) return 'pt1';
+                if (k.includes('pt') && k.includes('2')) return 'pt2';
+                if (k.includes('term') && k.includes('1')) return 't1';
+                if (k.includes('term') && k.includes('2')) return 't2';
+                if (k.includes('over') || k.includes('overall') || k.includes('grand')) return 'overall';
+                return k;
+            }).filter(Boolean);
 
-        // Find the index of the draw:frame with the given name
-        let frameIndex = -1;
-        for (let i = 0; i < children.length; i++) {
-            const node = children[i];
-            if (!node) continue;
-            if (node['#name'] === 'draw:frame') {
-                const attrs = node.$ || {};
-                if (attrs['draw:name'] === frameName) { frameIndex = i; break; }
-            }
-            // also check nested frames inside paragraphs
-            if (node['#name'] === 'text:p' && node.$$) {
-                for (const child of node.$$) {
-                    if (child['#name'] === 'draw:frame' && (child.$ || {})['draw:name'] === frameName) {
-                        frameIndex = i; break;
-                    }
-                }
-                if (frameIndex !== -1) break;
-            }
-        }
-        // First: try to find a table whose attributes indicate it was named for this frame
-        for (let i = 0; i < children.length; i++) {
-            const node = children[i];
-            if (!node) continue;
-            if (node['#name'] === 'table:table') {
-                const attrs = node.$ || {};
-                // look for any attribute value that equals the frameName (common: table:name)
-                const attrValues = Object.values(attrs).map(v => String(v));
-                if (attrValues.includes(String(frameName))) {
-                    // extract headers from this table
-                    const rows = [];
-                    const tableChildren = node.$$ || [];
-                    for (const tc of tableChildren) {
-                        if (tc['#name'] === 'table:table-row') rows.push(tc);
-                    }
-                    if (rows.length === 0) break;
-                    const headerRow = rows.find(r => (r.$$ || []).some(c => c['#name'] === 'table:table-cell')) || rows[0];
-                    const headers = [];
-                    for (const cell of headerRow.$$ || []) {
-                        if (cell['#name'] !== 'table:table-cell') continue;
-                        let cellText = '';
-                        if (cell.$$) {
-                            for (const cc of cell.$$) {
-                                if (cc['#name'] === 'text:p' && typeof cc._ === 'string') {
-                                    cellText += cc._;
-                                } else if (cc['#name'] === 'text:p' && Array.isArray(cc._)) {
-                                    cellText += cc._.join(' ');
-                                } else if (cc['#name'] === 'text:p' && cc.$$) {
-                                    for (const span of cc.$$) {
-                                        if (typeof span._ === 'string') cellText += span._;
-                                    }
-                                }
-                            }
-                        }
-                        cellText = (cellText || '').trim();
-                        if (cellText) headers.push(cellText);
-                    }
-                    console.log(`ℹ️ extractSeriesFromTemplate: raw headers for table named ${frameName}: ${JSON.stringify(headers)}`);
-                    const normalized = headers.map(h => {
-                        const k = String(h).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
-                        if (k.includes('pt') && k.includes('1')) return 'pt1';
-                        if (k.includes('pt') && k.includes('2')) return 'pt2';
-                        if (k.includes('term') && k.includes('1')) return 't1';
-                        if (k.includes('term') && k.includes('2')) return 't2';
-                        if (k.includes('over') || k.includes('overall') || k.includes('grand')) return 'overall';
-                        return k;
-                    }).filter(Boolean);
-                    console.log(`ℹ️ extractSeriesFromTemplate: normalized series keys: ${JSON.stringify(normalized)}`);
-                    return normalized.length ? normalized : null;
-                }
-            }
+            const examLike = mapped.filter(k => /pt1|pt2|t1|t2|term|overall|grand/.test(k));
+            return examLike.length ? examLike : mapped;
         }
 
-        // Fallback: Search backwards for the nearest table:table node before the frame
-        for (let j = Math.max(0, frameIndex - 1); j >= 0; j--) {
-            const node = children[j];
-            if (!node) continue;
-            if (node['#name'] === 'table:table') {
-                // Extract header row(s)
-                const rows = [];
-                const tableChildren = node.$$ || [];
-                for (const tc of tableChildren) {
-                    if (tc['#name'] === 'table:table-row') rows.push(tc);
-                }
-                if (rows.length === 0) continue;
+        // Build an ordered list of nodes (pre-order traversal) so we can find nearest tables/frames anywhere
+        const ordered = [];
+        function traverse(node) {
+            if (!node || typeof node !== 'object') return;
+            if (node['#name']) ordered.push(node);
+            const children = node.$$ || [];
+            for (const c of children) traverse(c);
+        }
+        traverse(textBody);
 
-                // pick first non-empty row as header
+        // Find any table whose attributes contain the frameName (search globally first)
+        const tables = ordered.filter(n => n['#name'] === 'table:table');
+        for (const t of tables) {
+            const attrs = t.$ || {};
+            const attrValues = Object.values(attrs).map(v => String(v));
+            if (attrValues.includes(String(frameName))) {
+                console.log(`ℹ️ extractSeriesFromTemplate: found table with attribute matching '${frameName}'.`);
+                const rows = (t.$$ || []).filter(tc => tc['#name'] === 'table:table-row');
+                if (rows.length === 0) break;
                 const headerRow = rows.find(r => (r.$$ || []).some(c => c['#name'] === 'table:table-cell')) || rows[0];
                 const headers = [];
                 for (const cell of headerRow.$$ || []) {
                     if (cell['#name'] !== 'table:table-cell') continue;
-                    // text may be nested under text:p
                     let cellText = '';
                     if (cell.$$) {
                         for (const cc of cell.$$) {
-                            if (cc['#name'] === 'text:p' && typeof cc._ === 'string') {
-                                cellText += cc._;
-                            } else if (cc['#name'] === 'text:p' && Array.isArray(cc._)) {
-                                cellText += cc._.join(' ');
-                            } else if (cc['#name'] === 'text:p' && cc.$$) {
-                                // flatten text spans
-                                for (const span of cc.$$) {
-                                    if (typeof span._ === 'string') cellText += span._;
-                                }
+                            if (cc['#name'] === 'text:p' && typeof cc._ === 'string') cellText += cc._;
+                            else if (cc['#name'] === 'text:p' && Array.isArray(cc._)) cellText += cc._.join(' ');
+                            else if (cc['#name'] === 'text:p' && cc.$$) {
+                                for (const span of cc.$$) if (typeof span._ === 'string') cellText += span._;
                             }
                         }
                     }
                     cellText = (cellText || '').trim();
                     if (cellText) headers.push(cellText);
                 }
+                console.log(`ℹ️ extractSeriesFromTemplate: raw headers for table named ${frameName}: ${JSON.stringify(headers)}`);
+                const normalized = normalizeAndFilterHeaders(headers);
+                console.log(`ℹ️ extractSeriesFromTemplate: normalized series keys: ${JSON.stringify(normalized)}`);
+                return normalized.length ? normalized : null;
+            }
+        }
 
-                // Normalize candidate headers to keys (like pt1, t1, overall)
-                    console.log(`ℹ️ extractSeriesFromTemplate: raw headers near frame ${frameName}: ${JSON.stringify(headers)}`);
-                    const normalized = headers.map(h => {
-                    const k = String(h).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
-                    // common replacements
-                    if (k.includes('pt') && k.includes('1')) return 'pt1';
-                    if (k.includes('pt') && k.includes('2')) return 'pt2';
-                    if (k.includes('term') && k.includes('1')) return 't1';
-                    if (k.includes('term') && k.includes('2')) return 't2';
-                    if (k.includes('over') || k.includes('overall') || k.includes('grand')) return 'overall';
-                    return k;
-                }).filter(Boolean);
+        // If none matched by name, scan all tables for exam-like headers and pick the first matching table
+        for (const t of tables) {
+            const rows = (t.$$ || []).filter(tc => tc['#name'] === 'table:table-row');
+            if (rows.length === 0) continue;
+            const headerRow = rows.find(r => (r.$$ || []).some(c => c['#name'] === 'table:table-cell')) || rows[0];
+            const headers = [];
+            for (const cell of headerRow.$$ || []) {
+                if (cell['#name'] !== 'table:table-cell') continue;
+                let cellText = '';
+                if (cell.$$) {
+                    for (const cc of cell.$$) {
+                        if (cc['#name'] === 'text:p' && typeof cc._ === 'string') cellText += cc._;
+                        else if (cc['#name'] === 'text:p' && Array.isArray(cc._)) cellText += cc._.join(' ');
+                        else if (cc['#name'] === 'text:p' && cc.$$) {
+                            for (const span of cc.$$) if (typeof span._ === 'string') cellText += span._;
+                        }
+                    }
+                }
+                cellText = (cellText || '').trim();
+                if (cellText) headers.push(cellText);
+            }
+            const normalized = normalizeAndFilterHeaders(headers);
+            // pick this table if it contains explicit exam-like keys
+            if (normalized.some(k => /pt1|pt2|t1|t2|overall/.test(k))) {
+                console.log(`ℹ️ extractSeriesFromTemplate: selected table by matching header keywords: ${JSON.stringify(normalized)}`);
+                return normalized;
+            }
+        }
 
+        // Find frame position and then nearest preceding table
+        let framePos = -1;
+        for (let i = 0; i < ordered.length; i++) {
+            const n = ordered[i];
+            if (n['#name'] === 'draw:frame') {
+                const attrs = n.$ || {};
+                if (attrs['draw:name'] === frameName) { framePos = i; break; }
+            }
+        }
+
+        if (framePos === -1 && ordered.length > 0) console.log(`ℹ️ extractSeriesFromTemplate: frame '${frameName}' not found; falling back to first nearby table.`);
+
+        for (let j = (framePos === -1 ? ordered.length - 1 : framePos - 1); j >= 0; j--) {
+            const node = ordered[j];
+            if (!node) continue;
+            if (node['#name'] === 'table:table') {
+                const rows = (node.$$ || []).filter(tc => tc['#name'] === 'table:table-row');
+                if (rows.length === 0) continue;
+                const headerRow = rows.find(r => (r.$$ || []).some(c => c['#name'] === 'table:table-cell')) || rows[0];
+                const headers = [];
+                for (const cell of headerRow.$$ || []) {
+                    if (cell['#name'] !== 'table:table-cell') continue;
+                    let cellText = '';
+                    if (cell.$$) {
+                        for (const cc of cell.$$) {
+                            if (cc['#name'] === 'text:p' && typeof cc._ === 'string') cellText += cc._;
+                            else if (cc['#name'] === 'text:p' && Array.isArray(cc._)) cellText += cc._.join(' ');
+                            else if (cc['#name'] === 'text:p' && cc.$$) {
+                                for (const span of cc.$$) if (typeof span._ === 'string') cellText += span._;
+                            }
+                        }
+                    }
+                    cellText = (cellText || '').trim();
+                    if (cellText) headers.push(cellText);
+                }
+                console.log(`ℹ️ extractSeriesFromTemplate: raw headers near frame ${frameName}: ${JSON.stringify(headers)}`);
+                const normalized = normalizeAndFilterHeaders(headers);
                 console.log(`ℹ️ extractSeriesFromTemplate: normalized series keys (fallback): ${JSON.stringify(normalized)}`);
                 return normalized.length ? normalized : null;
             }
@@ -597,9 +596,9 @@ function humanizeSeriesKey(k = '') {
 
 function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
     // detectedSeries: array of keys like ['pt1','t1','pt2','t2','overall']
-    const defaultSeriesKeys = ['pt1','t1','pt2','t2','overall'];
+    const defaultSeriesKeys = ['pt1', 't1', 'pt2', 't2', 'overall'];
     const seriesKeys = Array.isArray(detectedSeries) && detectedSeries.length > 0 ? detectedSeries : defaultSeriesKeys;
-    const palette = ['#3f6fb5','#f28c28','#2f9e44','#db4b2a','#7f3fbf','#4a90e2','#f2b233','#9b59b6'];
+    const palette = ['#3f6fb5', '#f28c28', '#2f9e44', '#db4b2a', '#7f3fbf', '#4a90e2', '#f2b233', '#9b59b6'];
 
     const series = seriesKeys.map((k, i) => ({ key: k, name: (k === 'overall' ? 'OVER ALL' : humanizeSeriesKey(k)), color: palette[i % palette.length] }));
     console.log(`ℹ️ buildStudentBarChartSvg: using series: ${JSON.stringify(series.map(s => ({ key: s.key, name: s.name })))}`);
@@ -609,7 +608,7 @@ function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
         .map(item => {
             const subjectName = String(item.name).trim() || 'Subject';
             const values = series.map(s => getValueForSeriesKey(item, s.key) || 0);
-            console.log(`ℹ️ buildStudentBarChartSvg: subject="${subjectName}" values=${JSON.stringify(series.map((s,i)=>({key:s.key,value:values[i]})))}`);
+            console.log(`ℹ️ buildStudentBarChartSvg: subject="${subjectName}" values=${JSON.stringify(series.map((s, i) => ({ key: s.key, value: values[i] })))}`);
             return { name: subjectName, values };
         })
         .filter(subject => subject.values.some(v => Number(v) > 0))
@@ -646,7 +645,7 @@ function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
     const subjectBars = validSubjects.map((subject, subjectIndex) => {
         const groupX = margin.left + subjectIndex * groupWidth + 10;
 
-            const bars = subject.values.map((value, seriesIndex) => {
+        const bars = subject.values.map((value, seriesIndex) => {
             const x = groupX + seriesIndex * barWidth + 2;
             const barHeight = (Number(value) / 100) * chartHeight;
             const y = margin.top + chartHeight - barHeight;
@@ -842,7 +841,8 @@ async function replaceImageInOdt(templatePath, student, schoolDetails, tempDir, 
     // Attempt to detect series order from template table behind the image frame
     let detectedSeries = null;
     try {
-        detectedSeries = await extractSeriesFromTemplate(contentXmlPath, frameName);
+        // Use the table named for the chart frame. Default to 'studentBarChart'.
+        detectedSeries = await extractSeriesFromTemplate(contentXmlPath, 'studentBarChart');
         if (detectedSeries) console.log(`ℹ️ Detected series from template: ${JSON.stringify(detectedSeries)}`);
     } catch (err) {
         console.warn('⚠️ Series detection failed:', err.message);
