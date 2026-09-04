@@ -133,6 +133,7 @@ async function extractSeriesFromTemplate(contentXmlPath, frameName) {
                         cellText = (cellText || '').trim();
                         if (cellText) headers.push(cellText);
                     }
+                    console.log(`ℹ️ extractSeriesFromTemplate: raw headers for table named ${frameName}: ${JSON.stringify(headers)}`);
                     const normalized = headers.map(h => {
                         const k = String(h).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
                         if (k.includes('pt') && k.includes('1')) return 'pt1';
@@ -142,6 +143,7 @@ async function extractSeriesFromTemplate(contentXmlPath, frameName) {
                         if (k.includes('over') || k.includes('overall') || k.includes('grand')) return 'overall';
                         return k;
                     }).filter(Boolean);
+                    console.log(`ℹ️ extractSeriesFromTemplate: normalized series keys: ${JSON.stringify(normalized)}`);
                     return normalized.length ? normalized : null;
                 }
             }
@@ -186,7 +188,8 @@ async function extractSeriesFromTemplate(contentXmlPath, frameName) {
                 }
 
                 // Normalize candidate headers to keys (like pt1, t1, overall)
-                const normalized = headers.map(h => {
+                    console.log(`ℹ️ extractSeriesFromTemplate: raw headers near frame ${frameName}: ${JSON.stringify(headers)}`);
+                    const normalized = headers.map(h => {
                     const k = String(h).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
                     // common replacements
                     if (k.includes('pt') && k.includes('1')) return 'pt1';
@@ -197,6 +200,7 @@ async function extractSeriesFromTemplate(contentXmlPath, frameName) {
                     return k;
                 }).filter(Boolean);
 
+                console.log(`ℹ️ extractSeriesFromTemplate: normalized series keys (fallback): ${JSON.stringify(normalized)}`);
                 return normalized.length ? normalized : null;
             }
         }
@@ -598,12 +602,14 @@ function buildStudentBarChartSvg(subjects = [], detectedSeries = null) {
     const palette = ['#3f6fb5','#f28c28','#2f9e44','#db4b2a','#7f3fbf','#4a90e2','#f2b233','#9b59b6'];
 
     const series = seriesKeys.map((k, i) => ({ key: k, name: (k === 'overall' ? 'OVER ALL' : humanizeSeriesKey(k)), color: palette[i % palette.length] }));
+    console.log(`ℹ️ buildStudentBarChartSvg: using series: ${JSON.stringify(series.map(s => ({ key: s.key, name: s.name })))}`);
 
     const validSubjects = (subjects || [])
         .filter(item => item && item.name)
         .map(item => {
             const subjectName = String(item.name).trim() || 'Subject';
             const values = series.map(s => getValueForSeriesKey(item, s.key) || 0);
+            console.log(`ℹ️ buildStudentBarChartSvg: subject="${subjectName}" values=${JSON.stringify(series.map((s,i)=>({key:s.key,value:values[i]})))}`);
             return { name: subjectName, values };
         })
         .filter(subject => subject.values.some(v => Number(v) > 0))
